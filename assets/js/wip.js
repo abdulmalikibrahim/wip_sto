@@ -49,24 +49,37 @@
         return $('<div>').text(v == null ? '' : v).html();
     }
 
+    function setLoading(isLoading) {
+        $('#wipLoading').toggleClass('d-none', !isLoading);
+        $('#btnRefresh, #btnDownload, #shopTabs .nav-link').prop('disabled', isLoading);
+        $('#btnRefresh i').toggleClass('spin', isLoading);
+    }
+
     function loadShop(shop) {
         currentShop = shop;
         $('#wipAlert').addClass('d-none').text('');
-        table.clear().draw();
-        $('#cardView').html('<div class="col-12 text-secondary small"><span class="spinner-border spinner-border-sm me-1"></span> Loading...</div>');
+        setLoading(true);
 
-        $.getJSON(BASE_URL + WIP_SOURCE + '/data/' + shop, function (resp) {
-            if (resp.status !== 'success') {
-                $('#wipAlert').removeClass('d-none').text(resp.message || 'Failed to load data.');
+        $.getJSON(BASE_URL + WIP_SOURCE + '/data/' + shop)
+            .done(function (resp) {
+                if (resp.status !== 'success') {
+                    $('#wipAlert').removeClass('d-none').text(resp.message || 'Failed to load data.');
+                    table.clear().draw();
+                    renderCards([]);
+                    return;
+                }
+                table.clear().rows.add(resp.data).draw();
+                renderCards(resp.data);
+                $('#wipLastUpdated').text('Updated ' + new Date().toLocaleTimeString('en-GB'));
+            })
+            .fail(function () {
+                $('#wipAlert').removeClass('d-none').text('Failed to reach the server.');
+                table.clear().draw();
                 renderCards([]);
-                return;
-            }
-            table.rows.add(resp.data).draw();
-            renderCards(resp.data);
-        }).fail(function () {
-            $('#wipAlert').removeClass('d-none').text('Failed to reach the server.');
-            renderCards([]);
-        });
+            })
+            .always(function () {
+                setLoading(false);
+            });
     }
 
     $('#shopTabs .nav-link').on('click', function () {
@@ -77,6 +90,10 @@
 
     $('#btnRefresh').on('click', function () {
         loadShop(currentShop);
+    });
+
+    $('#btnDownload').on('click', function () {
+        window.location.href = BASE_URL + WIP_SOURCE + '/export/' + currentShop;
     });
 
     $('#btnViewTable').on('click', function () {

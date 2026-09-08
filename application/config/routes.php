@@ -67,8 +67,10 @@ $route['bom/delete/(:num)'] = 'bom/delete/$1';
 // Master WIP
 $route['wip/kap1'] = 'wip/kap1';
 $route['wip/kap1/data/(:any)'] = 'wip/kap1_data/$1';
+$route['wip/kap1/export/(:any)'] = 'wip/kap1_export/$1';
 $route['wip/kap2'] = 'wip/kap2';
 $route['wip/kap2/data/(:any)'] = 'wip/kap2_data/$1';
+$route['wip/kap2/export/(:any)'] = 'wip/kap2_export/$1';
 
 // Akun (CRUD)
 $route['akun'] = 'akun/index';
