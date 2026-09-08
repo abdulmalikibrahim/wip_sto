@@ -12,7 +12,7 @@ class Wip extends MY_Controller
     public function kap1()
     {
         $data['title'] = 'Master WIP - KAP 1';
-        $data['source'] = 'kap1';
+        $data['source'] = 'wip/kap1';
         $data['shops'] = $this->config->item('wip_shop_labels');
         $data['page_js'] = 'assets/js/wip.js';
         $this->render('wip/index', $data, 'wip_kap1');
@@ -21,7 +21,7 @@ class Wip extends MY_Controller
     public function kap2()
     {
         $data['title'] = 'Master WIP - KAP 2';
-        $data['source'] = 'kap2';
+        $data['source'] = 'wip/kap2';
         $data['shops'] = $this->config->item('wip_shop_labels');
         $data['page_js'] = 'assets/js/wip.js';
         $this->render('wip/index', $data, 'wip_kap2');
