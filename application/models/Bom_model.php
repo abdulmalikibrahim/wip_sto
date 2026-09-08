@@ -1,7 +1,10 @@
 <?php
 defined('BASEPATH') OR exit('No direct script access allowed');
 
-use OpenSpout\Reader\XLSX\Reader as XlsxReader;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx as XlsxWriter;
 
 class Bom_model extends CI_Model
 {
@@ -85,25 +88,38 @@ class Bom_model extends CI_Model
      */
     public function download_template()
     {
-        $writer = new \OpenSpout\Writer\XLSX\Writer();
-        $writer->openToBrowser('template_upload_bom.xlsx');
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('BOM');
 
-        $headerStyle = (new \OpenSpout\Common\Entity\Style\Style())
-            ->setFontBold()
-            ->setBackgroundColor('1F6FEB')
-            ->setFontColor('FFFFFF');
-
-        $writer->addRow(\OpenSpout\Common\Entity\Row::fromValues($this->required_headers, $headerStyle));
+        $sheet->fromArray($this->required_headers, null, 'A1');
+        $sheet->getStyle('A1:G1')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A1:G1')->getFill()
+            ->setFillType(Fill::FILL_SOLID)
+            ->getStartColor()->setRGB('1F6FEB');
 
         // A couple of example rows to guide the user (matching the real BOM format).
-        $writer->addRow(\OpenSpout\Common\Entity\Row::fromValues(
-            array('11103102000000', 'MN', '09101-BZ030-00', 'TOOL SET, STD L/JACK', 1, 'PC', 'WELD')
-        ));
-        $writer->addRow(\OpenSpout\Common\Entity\Row::fromValues(
-            array('11103102000000', 'MN', '11293-BZ840-00', 'LABEL, TUNE-UP SPECIFICATION INFORMATION', 1, 'PC', 'TOSO')
-        ));
+        $sheet->fromArray(
+            array('11103102000000', 'MN', '09101-BZ030-00', 'TOOL SET, STD L/JACK', 1, 'PC', 'WELD'),
+            null,
+            'A2'
+        );
+        $sheet->fromArray(
+            array('11103102000000', 'MN', '11293-BZ840-00', 'LABEL, TUNE-UP SPECIFICATION INFORMATION', 1, 'PC', 'TOSO'),
+            null,
+            'A3'
+        );
 
-        $writer->close();
+        foreach (range('A', 'G') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="template_upload_bom.xlsx"');
+        header('Cache-Control: max-age=0');
+
+        $writer = new XlsxWriter($spreadsheet);
+        $writer->save('php://output');
     }
 
     /**
@@ -113,10 +129,10 @@ class Bom_model extends CI_Model
      */
     public function parse_excel($file_path)
     {
-        $reader = new XlsxReader();
-
         try {
-            $reader->open($file_path);
+            $reader = IOFactory::createReaderForFile($file_path);
+            $reader->setReadDataOnly(true);
+            $spreadsheet = $reader->load($file_path);
         } catch (\Throwable $e) {
             return array('ok' => false, 'message' => 'Unable to read the Excel file: ' . $e->getMessage());
         }
@@ -124,15 +140,20 @@ class Bom_model extends CI_Model
         $rows = array();
         $header_checked = false;
 
-        foreach ($reader->getSheetIterator() as $sheet) {
-            foreach ($sheet->getRowIterator() as $rowIndex => $row) {
-                $cells = $row->toArray();
+        foreach ($spreadsheet->getWorksheetIterator() as $worksheet) {
+            foreach ($worksheet->getRowIterator() as $row) {
+                $rowIndex = $row->getRowIndex();
+
+                $cellIterator = $row->getCellIterator('A', 'G');
+                $cellIterator->setIterateOnlyExistingCells(false);
+                $cells = array();
+                foreach ($cellIterator as $cell) {
+                    $cells[] = $cell->getValue();
+                }
 
                 if ($rowIndex === 1) {
                     $header_checked = true;
                     if (!$this->header_matches($cells)) {
-                        $reader->close();
-
                         return array(
                             'ok' => false,
                             'message' => 'Invalid template. Expected columns: ' . implode(', ', $this->required_headers),
@@ -155,9 +176,9 @@ class Bom_model extends CI_Model
                     'shop_code'            => trim((string) ($cells[6] ?? '')),
                 );
             }
-        }
 
-        $reader->close();
+            break; // only the first sheet is used for uploads
+        }
 
         if (!$header_checked) {
             return array('ok' => false, 'message' => 'The uploaded file is empty.');

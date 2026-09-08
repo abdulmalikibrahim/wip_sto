@@ -19,13 +19,16 @@ the Master Bill of Material (BOM), built for KAP1/KAP2 production tracking.
 
 ## Requirements
 
-- PHP >= 8.1 with `mysqli`, `curl`, `zip`, `gd` extensions
+- PHP >= 7.4 (tested on 7.4 and 8.3+) with `mysqli`, `curl`, `zip`, `gd` extensions
 - MySQL / MariaDB
 - Composer
 
 ## Setup
 
-1. Install dependencies:
+1. Install dependencies (make sure `composer`/`php` on your PATH resolves to a
+   PHP >= 7.4 binary — on a multi-PHP-version Laragon setup, either switch the
+   active CLI version first or run composer explicitly with the right binary,
+   e.g. `path\to\php74\php.exe path\to\composer.phar install`):
    ```bash
    composer install
    ```
