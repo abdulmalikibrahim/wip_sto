@@ -6,6 +6,7 @@
     var columns = [
         { data: 'no', orderable: false, searchable: false },
         { data: 'material' },
+        { data: 'katashiki' },
         { data: 'suffix' },
         { data: 'component' },
         { data: 'part_number' },

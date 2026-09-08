@@ -1,12 +1,14 @@
 (function ($) {
     'use strict';
 
-    var table = $('#tblWip').DataTable($.extend({}, window.APP_DT_DEFAULTS, {
+    var dtOptions = $.extend({}, window.APP_DT_DEFAULTS, {
         data: [],
+        processing: true,
         columns: [
             { data: 'no' },
             { data: 'vin' },
             { data: 'sfx' },
+            { data: 'katashiki' },
             { data: 'modelcode' },
             { data: 'colorcode' },
             { data: 'colorname' },
@@ -14,7 +16,12 @@
             { data: 'scandate' },
             { data: 'shopcode' },
         ]
-    }));
+    });
+    dtOptions.language = $.extend({}, dtOptions.language, {
+        processing: '<div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>Loading WIP data...'
+    });
+
+    var table = $('#tblWip').DataTable(dtOptions);
 
     var currentShop = $('#shopTabs .nav-link.active').data('shop');
 
@@ -34,6 +41,7 @@
                         '</div>' +
                         '<dl>' +
                             '<dt>Suffix</dt><dd>' + esc(r.sfx) + '</dd>' +
+                            '<dt>Katashiki</dt><dd>' + esc(r.katashiki) + '</dd>' +
                             '<dt>Model</dt><dd>' + esc(r.modelcode) + '</dd>' +
                             '<dt>Color</dt><dd>' + esc(r.colorcode) + ' - ' + esc(r.colorname) + '</dd>' +
                             '<dt>Last Scan</dt><dd>' + esc(r.wipname) + '</dd>' +
@@ -50,6 +58,7 @@
     }
 
     function setLoading(isLoading) {
+        table.processing(isLoading);
         $('#wipLoading').toggleClass('d-none', !isLoading);
         $('#btnRefresh, #btnDownload, #shopTabs .nav-link').prop('disabled', isLoading);
         $('#btnRefresh i').toggleClass('spin', isLoading);
@@ -100,14 +109,14 @@
         $(this).addClass('active');
         $('#btnViewCard').removeClass('active');
         $('#tableView').removeClass('d-none');
-        $('#cardView').addClass('d-none');
+        $('#cardViewWrap').addClass('d-none');
         table.columns.adjust().responsive.recalc();
     });
 
     $('#btnViewCard').on('click', function () {
         $(this).addClass('active');
         $('#btnViewTable').removeClass('active');
-        $('#cardView').removeClass('d-none');
+        $('#cardViewWrap').removeClass('d-none');
         $('#tableView').addClass('d-none');
     });
 

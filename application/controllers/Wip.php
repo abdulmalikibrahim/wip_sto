@@ -68,7 +68,7 @@ class Wip extends MY_Controller
             return;
         }
 
-        $headers = array('No', 'VIN', 'Suffix', 'Model', 'Color Code', 'Color Desc', 'Last Scan', 'Scan Date', 'Shop Code');
+        $headers = array('No', 'VIN', 'Suffix', 'Katashiki', 'Model', 'Color Code', 'Color Desc', 'Last Scan', 'Scan Date', 'Shop Code');
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -88,6 +88,7 @@ class Wip extends MY_Controller
                 $i + 1,
                 $row['vin'],
                 $row['sfx'],
+                $row['katashiki'],
                 $row['modelcode'],
                 $row['colorcode'],
                 $row['colorname'],

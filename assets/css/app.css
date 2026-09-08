@@ -170,6 +170,18 @@ a { color: var(--app-accent); }
 
 .dt-buttons, .dataTables_info, .dataTables_paginate { color: var(--app-text-muted); }
 
+.dataTables_processing {
+    background-color: var(--app-surface-2) !important;
+    border: 1px solid var(--app-border) !important;
+    color: #e4e6eb !important;
+    border-radius: 0.5rem;
+    padding: 0.6rem 1rem !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
 .upload-dropzone {
     border: 2px dashed var(--app-border);
     border-radius: 0.6rem;

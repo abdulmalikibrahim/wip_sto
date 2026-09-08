@@ -1,9 +1,11 @@
 <?php
 defined('BASEPATH') OR exit('No direct script access allowed');
 
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx as XlsxWriter;
 
 class Bom_model extends CI_Model
@@ -12,7 +14,7 @@ class Bom_model extends CI_Model
 
     /** Required header columns of the upload/template Excel file, in order. */
     public $required_headers = array(
-        'Material', 'Suffix', 'Component', 'Material Description', 'Qty', 'Uom', 'Shop Code',
+        'Material', 'Katashiki', 'Model', 'Suffix', 'Component', 'Material Description', 'Qty', 'Uom', 'Shop Code',
     );
 
     public function __construct()
@@ -25,7 +27,7 @@ class Bom_model extends CI_Model
      */
     public function datatable($request)
     {
-        $columns = array('id', 'material', 'suffix', 'component', 'part_number', 'material_description', 'qty', 'uom', 'shop_code');
+        $columns = array('id', 'material', 'katashiki', 'model', 'suffix', 'component', 'part_number', 'material_description', 'qty', 'uom', 'shop_code');
 
         $this->db->from($this->table);
 
@@ -33,6 +35,8 @@ class Bom_model extends CI_Model
         if ($search !== '') {
             $this->db->group_start();
             $this->db->like('material', $search);
+            $this->db->or_like('katashiki', $search);
+            $this->db->or_like('model', $search);
             $this->db->or_like('suffix', $search);
             $this->db->or_like('component', $search);
             $this->db->or_like('part_number', $search);
@@ -84,7 +88,7 @@ class Bom_model extends CI_Model
     }
 
     /**
-     * Stream the upload template (single sheet, 7 required columns) straight to the browser.
+     * Stream the upload template (single sheet, 8 required columns) straight to the browser.
      */
     public function download_template()
     {
@@ -93,24 +97,32 @@ class Bom_model extends CI_Model
         $sheet->setTitle('BOM');
 
         $sheet->fromArray($this->required_headers, null, 'A1');
-        $sheet->getStyle('A1:G1')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle('A1:G1')->getFill()
+        $sheet->getStyle('A1:H1')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A1:H1')->getFill()
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('1F6FEB');
 
+        // Material holds long numeric codes (e.g. 11103102000000); format the whole
+        // column as text so Excel never collapses it into scientific notation.
+        // (Must be the full "A1:A1048576" column range so PhpSpreadsheet takes the
+        // column-style fast path instead of materializing a million cell objects.)
+        $sheet->getStyle('A1:A1048576')->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
+
         // A couple of example rows to guide the user (matching the real BOM format).
-        $sheet->fromArray(
-            array('11103102000000', 'MN', '09101-BZ030-00', 'TOOL SET, STD L/JACK', 1, 'PC', 'WELD'),
-            null,
-            'A2'
-        );
-        $sheet->fromArray(
-            array('11103102000000', 'MN', '11293-BZ840-00', 'LABEL, TUNE-UP SPECIFICATION INFORMATION', 1, 'PC', 'TOSO'),
-            null,
-            'A3'
+        $examples = array(
+            array('11103102000000', 'W100RG-LMDFJ N4 ( D37D )', 'MN', '09101-BZ030-00', 'TOOL SET, STD L/JACK', 1, 'PC', 'WELD'),
+            array('11103102000000', 'W100RG-LMDFJ N4 ( D37D )', 'MN', '11293-BZ840-00', 'LABEL, TUNE-UP SPECIFICATION INFORMATION', 1, 'PC', 'TOSO'),
         );
 
-        foreach (range('A', 'G') as $col) {
+        $row = 2;
+        foreach ($examples as $example) {
+            // Written explicitly as a string so it stays full-width text, not scientific notation.
+            $sheet->setCellValueExplicit("A{$row}", $example[0], DataType::TYPE_STRING);
+            $sheet->fromArray(array_slice($example, 1), null, "B{$row}");
+            $row++;
+        }
+
+        foreach (range('A', 'H') as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
@@ -144,7 +156,7 @@ class Bom_model extends CI_Model
             foreach ($worksheet->getRowIterator() as $row) {
                 $rowIndex = $row->getRowIndex();
 
-                $cellIterator = $row->getCellIterator('A', 'G');
+                $cellIterator = $row->getCellIterator('A', 'H');
                 $cellIterator->setIterateOnlyExistingCells(false);
                 $cells = array();
                 foreach ($cellIterator as $cell) {
@@ -168,12 +180,13 @@ class Bom_model extends CI_Model
 
                 $rows[] = array(
                     'material'             => trim((string) ($cells[0] ?? '')),
-                    'suffix'               => trim((string) ($cells[1] ?? '')),
-                    'component'            => trim((string) ($cells[2] ?? '')),
-                    'material_description' => trim((string) ($cells[3] ?? '')),
-                    'qty'                  => is_numeric($cells[4] ?? null) ? (float) $cells[4] : 0,
-                    'uom'                  => trim((string) ($cells[5] ?? '')),
-                    'shop_code'            => trim((string) ($cells[6] ?? '')),
+                    'model'                => trim((string) ($cells[1] ?? '')),
+                    'suffix'               => trim((string) ($cells[2] ?? '')),
+                    'component'            => trim((string) ($cells[3] ?? '')),
+                    'material_description' => trim((string) ($cells[4] ?? '')),
+                    'qty'                  => is_numeric($cells[5] ?? null) ? (float) $cells[5] : 0,
+                    'uom'                  => trim((string) ($cells[6] ?? '')),
+                    'shop_code'            => trim((string) ($cells[7] ?? '')),
                 );
             }
 
@@ -207,6 +220,7 @@ class Bom_model extends CI_Model
 
             $batch[] = array(
                 'material'             => $row['material'],
+                'model'                => $row['model'],
                 'suffix'               => $row['suffix'],
                 'component'            => $row['component'],
                 'part_number'          => strip_trailing_dash00($row['component']),

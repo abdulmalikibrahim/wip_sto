@@ -39,6 +39,7 @@
                     <tr>
                         <th>No</th>
                         <th>Material</th>
+                        <th>Katashiki</th>
                         <th>Suffix</th>
                         <th>Component</th>
                         <th>Part Number</th>
@@ -66,7 +67,7 @@
                 </div>
                 <div class="modal-body">
                     <p class="small text-secondary">
-                        File must use the standard template: <strong>Material, Suffix, Component, Material Description, Qty, Uom, Shop Code</strong>.
+                        File must use the standard template: <strong>Material, Katashiki, Suffix, Component, Material Description, Qty, Uom, Shop Code</strong>.
                         <code>part_number</code> will be generated automatically from <code>Component</code> (trailing "-00" removed).
                     </p>
                     <label class="upload-dropzone d-block mb-3" id="dropzone">

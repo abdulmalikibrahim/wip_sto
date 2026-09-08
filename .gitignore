@@ -7,4 +7,5 @@
 Thumbs.db
 *.log
 /docs/Dowload BOM.XLSX
+/docs/~$*
 /application/config/wip_api_local.php

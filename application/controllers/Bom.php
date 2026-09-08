@@ -32,6 +32,7 @@ class Bom extends MY_Controller
                 'no'                   => $start + $i + 1,
                 'id'                   => $r['id'],
                 'material'             => $r['material'],
+                'katashiki'            => $r['model'],
                 'suffix'               => $r['suffix'],
                 'component'            => $r['component'],
                 'part_number'          => $r['part_number'],

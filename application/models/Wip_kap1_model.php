@@ -104,6 +104,7 @@ class Wip_kap1_model extends CI_Model
         return array(
             'vin'        => trim((string) ($rec['vin'] ?? '')),
             'sfx'        => trim((string) ($rec['sfx'] ?? '')),
+            'katashiki'  => trim((string) ($rec['ktsk'] ?? '')),
             'modelcode'  => trim((string) ($rec['modelcode'] ?? '')),
             'colorcode'  => trim((string) ($rec['colorcode'] ?? '')),
             'colorname'  => trim((string) ($rec['colorname'] ?? '')),

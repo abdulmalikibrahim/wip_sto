@@ -31,36 +31,36 @@
 
 <div id="wipAlert" class="alert alert-danger d-none"></div>
 
-<div class="position-relative">
+<div class="card" id="tableView">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table id="tblWip" class="table table-hover align-middle w-100">
+                <thead>
+                    <tr>
+                        <th>No</th>
+                        <th>VIN</th>
+                        <th>Suffix</th>
+                        <th>Katashiki</th>
+                        <th>Model</th>
+                        <th>Color Code</th>
+                        <th>Color Desc</th>
+                        <th>Last Scan</th>
+                        <th>Scan Date</th>
+                        <th>Shop Code</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div id="cardViewWrap" class="position-relative d-none">
     <div id="wipLoading" class="wip-loading-overlay d-none">
         <div class="spinner-border text-primary" role="status"></div>
         <div class="mt-2 small text-secondary">Loading WIP data...</div>
     </div>
-
-    <div class="card" id="tableView">
-        <div class="card-body">
-            <div class="table-responsive">
-                <table id="tblWip" class="table table-hover align-middle w-100">
-                    <thead>
-                        <tr>
-                            <th>No</th>
-                            <th>VIN</th>
-                            <th>Suffix</th>
-                            <th>Model</th>
-                            <th>Color Code</th>
-                            <th>Color Desc</th>
-                            <th>Last Scan</th>
-                            <th>Scan Date</th>
-                            <th>Shop Code</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <div id="cardView" class="row g-3 d-none"></div>
+    <div id="cardView" class="row g-3"></div>
 </div>
 
 <script>
