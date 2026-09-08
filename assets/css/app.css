@@ -1,0 +1,221 @@
+/* ============================================================
+   WIP & BOM Monitoring — Dark theme (default)
+   ============================================================ */
+:root {
+    --app-bg: #14171c;
+    --app-surface: #1b1f27;
+    --app-surface-2: #21262f;
+    --app-border: #2b3038;
+    --app-text-muted: #8b93a1;
+    --app-accent: #4f8cff;
+}
+
+html, body {
+    height: 100%;
+}
+
+body {
+    background-color: var(--app-bg);
+    color: #e4e6eb;
+}
+
+a { color: var(--app-accent); }
+
+/* ---------- Topbar ---------- */
+.app-topbar {
+    background-color: var(--app-surface);
+    border-bottom: 1px solid var(--app-border);
+    height: 56px;
+    position: sticky;
+    top: 0;
+    z-index: 1030;
+}
+
+/* ---------- Layout ---------- */
+.app-wrapper {
+    display: flex;
+    min-height: calc(100vh - 56px);
+}
+
+.app-sidebar {
+    width: 240px;
+    flex-shrink: 0;
+    background-color: var(--app-surface);
+    border-right: 1px solid var(--app-border);
+    position: sticky;
+    top: 56px;
+    height: calc(100vh - 56px);
+    overflow-y: auto;
+}
+
+.app-sidebar .nav-link {
+    color: #c3c8d1;
+    padding: 0.55rem 1.25rem;
+    border-left: 3px solid transparent;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.92rem;
+}
+
+.app-sidebar .nav-link i { font-size: 1.05rem; width: 1.1rem; }
+
+.app-sidebar .nav-link:hover {
+    background-color: var(--app-surface-2);
+    color: #fff;
+}
+
+.app-sidebar .nav-link.active {
+    background-color: rgba(79, 140, 255, 0.12);
+    border-left-color: var(--app-accent);
+    color: #fff;
+    font-weight: 500;
+}
+
+.nav-section-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--app-text-muted);
+    padding: 0.9rem 1.25rem 0.25rem;
+}
+
+.app-sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 56px 0 0 0;
+    background: rgba(0,0,0,.5);
+    z-index: 1020;
+}
+
+.app-content {
+    flex: 1;
+    padding: 1.5rem;
+    min-width: 0;
+}
+
+/* ---------- Cards / surfaces ---------- */
+.card {
+    background-color: var(--app-surface);
+    border: 1px solid var(--app-border);
+}
+
+.card-header {
+    background-color: var(--app-surface-2);
+    border-bottom: 1px solid var(--app-border);
+}
+
+.page-title {
+    font-size: 1.35rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+.stat-card {
+    background-color: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: 0.6rem;
+    padding: 1.1rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.stat-card .stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 0.6rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    background: rgba(79, 140, 255, 0.15);
+    color: var(--app-accent);
+}
+
+.stat-card .stat-value { font-size: 1.5rem; font-weight: 700; line-height: 1; }
+.stat-card .stat-label { color: var(--app-text-muted); font-size: 0.82rem; }
+
+/* ---------- WIP vin cards ---------- */
+.wip-card {
+    background-color: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: 0.55rem;
+    padding: 0.9rem 1rem;
+    height: 100%;
+}
+
+.wip-card .vin {
+    font-family: 'Consolas', 'SFMono-Regular', monospace;
+    font-weight: 600;
+    font-size: 0.95rem;
+    letter-spacing: 0.02em;
+}
+
+.wip-card dl { margin: 0.5rem 0 0; font-size: 0.82rem; }
+.wip-card dt { color: var(--app-text-muted); float: left; width: 44%; }
+.wip-card dd { margin-left: 44%; margin-bottom: 0.15rem; }
+
+/* ---------- Forms / table tweaks ---------- */
+.table { color: #e4e6eb; }
+.table > :not(caption) > * > * { background-color: transparent; }
+
+.dataTables_wrapper .dataTables_filter input,
+.dataTables_wrapper .dataTables_length select {
+    background-color: var(--app-surface-2);
+    border: 1px solid var(--app-border);
+    color: #e4e6eb;
+    border-radius: 0.35rem;
+}
+
+.dt-buttons, .dataTables_info, .dataTables_paginate { color: var(--app-text-muted); }
+
+.upload-dropzone {
+    border: 2px dashed var(--app-border);
+    border-radius: 0.6rem;
+    padding: 2rem 1rem;
+    text-align: center;
+    color: var(--app-text-muted);
+    cursor: pointer;
+    transition: border-color .15s, background-color .15s;
+}
+.upload-dropzone:hover, .upload-dropzone.dragover {
+    border-color: var(--app-accent);
+    background-color: rgba(79,140,255,0.06);
+}
+
+.login-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at top, #1b1f27, #0e1116 70%);
+}
+
+.login-card {
+    width: 100%;
+    max-width: 380px;
+    background-color: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: 0.75rem;
+    padding: 2rem;
+}
+
+.shop-tabs .nav-link { color: #c3c8d1; }
+.shop-tabs .nav-link.active {
+    background-color: var(--app-surface-2);
+    color: #fff;
+    border-color: var(--app-border) var(--app-border) transparent;
+}
+
+@media (max-width: 991.98px) {
+    .app-sidebar {
+        position: fixed;
+        left: -240px;
+        top: 56px;
+        z-index: 1025;
+        transition: left .2s ease;
+    }
+    .app-sidebar.show { left: 0; }
+    .app-sidebar-backdrop.show { display: block; }
+}

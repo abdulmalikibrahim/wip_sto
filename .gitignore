@@ -1,0 +1,10 @@
+/vendor/
+/application/logs/*
+!/application/logs/index.html
+/application/cache/*
+!/application/cache/index.html
+.DS_Store
+Thumbs.db
+*.log
+/docs/Dowload BOM.XLSX
+/application/config/wip_api_local.php

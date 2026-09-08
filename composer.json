@@ -1,0 +1,14 @@
+{
+    "name": "kap/wip_sto",
+    "description": "WIP & BOM Monitoring System (CodeIgniter 3)",
+    "type": "project",
+    "require": {
+        "php": ">=8.1",
+        "ext-zip": "*",
+        "openspout/openspout": "^4.23"
+    },
+    "config": {
+        "vendor-dir": "vendor",
+        "process-timeout": 0
+    }
+}
