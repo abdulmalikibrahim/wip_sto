@@ -5,6 +5,12 @@
         return $('<div>').text(v == null ? '' : v).html();
     }
 
+    // Zero reads as a dash — makes the non-zero (actually contributing)
+    // suffixes easier to spot in the breakdown table.
+    function dashIfZero(v) {
+        return parseFloat(v) === 0 ? '<span class="text-secondary">—</span>' : esc(v);
+    }
+
     var columns = [
         { data: 'no', orderable: false, searchable: false },
         { data: 'part_number' },
@@ -75,10 +81,9 @@
             return '<tr' + (zero ? ' class="text-secondary"' : '') + '>' +
                 '<td>' + esc(s.model) + '</td>' +
                 '<td>' + esc(s.suffix) + '</td>' +
-                '<td class="small">' + esc(s.material) + '</td>' +
                 '<td class="text-end">' + esc(s.qty) + '</td>' +
-                '<td class="text-end">' + esc(s.unit_count) + '</td>' +
-                '<td class="text-end' + (zero ? '' : ' fw-semibold text-body') + '">' + esc(s.subtotal) + '</td>' +
+                '<td class="text-end">' + dashIfZero(s.unit_count) + '</td>' +
+                '<td class="text-end' + (zero ? '' : ' fw-semibold text-body') + '">' + dashIfZero(s.subtotal) + '</td>' +
                 '</tr>';
         }).join('');
 
@@ -92,10 +97,10 @@
             '<div class="text-secondary small mb-2">Every suffix this part is defined for in the BOM, and how many of the shop\'s cached WIP units matched each one:</div>' +
             '<div class="table-responsive">' +
                 '<table class="table table-sm table-hover mb-0">' +
-                    '<thead><tr><th>Model</th><th>Suffix</th><th>Material</th><th class="text-end">BOM Qty</th><th class="text-end">Matching Units</th><th class="text-end">Subtotal</th></tr></thead>' +
+                    '<thead><tr><th>Model</th><th>Suffix</th><th class="text-end">BOM Qty</th><th class="text-end">Matching Units</th><th class="text-end">Subtotal</th></tr></thead>' +
                     '<tbody>' + rows + '</tbody>' +
                     '<tfoot><tr class="fw-semibold border-top">' +
-                        '<td colspan="5" class="text-end">Total</td>' +
+                        '<td colspan="4" class="text-end">Total</td>' +
                         '<td class="text-end text-success">' + esc(resp.grand_subtotal) + '</td>' +
                     '</tr></tfoot>' +
                 '</table>' +

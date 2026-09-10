@@ -217,16 +217,18 @@ class Wip_calc_model extends CI_Model
     }
 
     /**
-     * KAP1 + KAP2's calc() results concatenated as-is — a plain union, not
-     * a re-aggregation (a part_number that happens to exist in both lines
-     * still gets two separate rows here). Each row is tagged 'source' =>
-     * 'KAP1'/'KAP2' so it's clear which line it came from.
+     * KAP1 + KAP2's calc() results, unioned — with one exception: when the
+     * same part_number shows up in both lines and NEITHER has a cutoff VIN
+     * set (both are plain, unbounded totals), the two rows are summed into
+     * one, tagged source => 'Both'. If either side DOES have a cutoff, they
+     * stay separate ('KAP1'/'KAP2') — blending a cutoff-bounded figure with
+     * a plain total would misrepresent what the cutoff actually captured.
      *
      * @return array{ok:bool, message:string, data:array}
      */
     public function calc_combined()
     {
-        $data = array();
+        $by_source = array();
         $messages = array();
         $ok = true;
 
@@ -237,13 +239,86 @@ class Wip_calc_model extends CI_Model
                 $messages[] = $result['message'];
                 continue;
             }
+            $by_source[$source] = array();
             foreach ($result['data'] as $row) {
-                $row['source'] = strtoupper($source);
-                $data[] = $row;
+                $by_source[$source][$row['part_number']] = $row;
+            }
+        }
+
+        $shop_keys = array('weld', 'toso', 'assy');
+        $has_cutoff = function ($row) use ($shop_keys) {
+            foreach ($shop_keys as $s) {
+                if (!empty($row[$s . '_vin'])) {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        $data = array();
+        $merged_parts = array();
+
+        foreach (array('kap1', 'kap2') as $source) {
+            $other_source = $source === 'kap1' ? 'kap2' : 'kap1';
+
+            foreach (($by_source[$source] ?? array()) as $part_number => $row) {
+                if (isset($merged_parts[$part_number])) {
+                    continue; // already emitted as a merged "Both" row below
+                }
+
+                $other_row = $by_source[$other_source][$part_number] ?? null;
+
+                if ($other_row === null || $has_cutoff($row) || $has_cutoff($other_row)) {
+                    // Only one line has this part, or one of them has a
+                    // cutoff set — keep as its own row.
+                    $row['source'] = strtoupper($source);
+                    $data[] = $row;
+                    continue;
+                }
+
+                // Neither line has a cutoff for this part — safe to sum.
+                $merged = array(
+                    'part_number'          => $part_number,
+                    'material'             => $row['material'] !== '' ? $row['material'] : $other_row['material'],
+                    'material_description' => $row['material_description'] !== '' ? $row['material_description'] : $other_row['material_description'],
+                    'uom'                  => $row['uom'] !== '' ? $row['uom'] : $other_row['uom'],
+                    'shop_code'            => $this->merge_shop_codes($row['shop_code'], $other_row['shop_code']),
+                    'source'               => 'Both',
+                );
+                foreach ($shop_keys as $s) {
+                    $merged[$s]              = $this->trim_qty((float) $row[$s] + (float) $other_row[$s]);
+                    $merged[$s . '_gross']   = $this->trim_qty((float) $row[$s . '_gross'] + (float) $other_row[$s . '_gross']);
+                    $merged[$s . '_cutoff']  = $this->trim_qty((float) $row[$s . '_cutoff'] + (float) $other_row[$s . '_cutoff']);
+                    $merged[$s . '_net']     = $merged[$s];
+                    $merged[$s . '_vin']     = null;
+                }
+                $merged['total']        = $this->trim_qty((float) $row['total'] + (float) $other_row['total']);
+                $merged['total_gross']  = $this->trim_qty((float) $row['total_gross'] + (float) $other_row['total_gross']);
+                $merged['total_cutoff'] = $this->trim_qty((float) $row['total_cutoff'] + (float) $other_row['total_cutoff']);
+                $merged['total_net']    = $merged['total'];
+
+                $data[] = $merged;
+                $merged_parts[$part_number] = true;
             }
         }
 
         return array('ok' => $ok, 'message' => $ok ? 'ok' : implode(' ', $messages), 'data' => $data);
+    }
+
+    /**
+     * Union two BOM Shop Code strings (each possibly a comma list already)
+     * into one deduplicated, comma-separated list — used when merging a
+     * KAP1 and KAP2 row into one "Both" row in calc_combined().
+     */
+    protected function merge_shop_codes($a, $b)
+    {
+        $codes = array_filter(array_map('trim', array_merge(
+            explode(',', (string) $a),
+            explode(',', (string) $b)
+        )));
+
+        return implode(', ', array_unique($codes));
     }
 
     /**

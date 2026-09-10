@@ -4,8 +4,11 @@
 
 <div class="alert alert-secondary small mb-3">
     <i class="bi bi-info-circle me-1"></i>
-    This is <strong>KAP 1</strong>'s and <strong>KAP 2</strong>'s WIP Calc lists shown together — a plain merge, not
-    re-added into one total. The <strong>Source</strong> column marks which line each row came from. Cutoff VINs are
+    This is <strong>KAP 1</strong>'s and <strong>KAP 2</strong>'s WIP Calc lists shown together. The
+    <strong>Source</strong> column marks which line each row came from — except when the same Part Number appears in
+    both lines with <em>no cutoff VIN set on either side</em>: those are summed into one row marked
+    <span class="badge text-bg-success">Both</span>, since there's nothing cutoff-specific to keep separate. If a
+    cutoff VIN is set on either side, the two rows stay separate instead of being blended together. Cutoff VINs are
     still managed on the individual <a href="<?= base_url('wip/kap1/calc') ?>">WIP Calc. KAP 1</a> /
     <a href="<?= base_url('wip/kap2/calc') ?>">WIP Calc. KAP 2</a> pages.
 </div>

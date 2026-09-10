@@ -20,7 +20,7 @@
             className: 'text-center',
             render: function (value, type) {
                 if (type !== 'display') return value;
-                var cls = value === 'KAP1' ? 'text-bg-info' : 'text-bg-primary';
+                var cls = value === 'KAP1' ? 'text-bg-info' : (value === 'KAP2' ? 'text-bg-primary' : 'text-bg-success');
                 return '<span class="badge ' + cls + '">' + esc(value) + '</span>';
             }
         },
