@@ -217,6 +217,36 @@ class Wip_calc_model extends CI_Model
     }
 
     /**
+     * KAP1 + KAP2's calc() results concatenated as-is — a plain union, not
+     * a re-aggregation (a part_number that happens to exist in both lines
+     * still gets two separate rows here). Each row is tagged 'source' =>
+     * 'KAP1'/'KAP2' so it's clear which line it came from.
+     *
+     * @return array{ok:bool, message:string, data:array}
+     */
+    public function calc_combined()
+    {
+        $data = array();
+        $messages = array();
+        $ok = true;
+
+        foreach (array('kap1', 'kap2') as $source) {
+            $result = $this->calc($source);
+            if (!$result['ok']) {
+                $ok = false;
+                $messages[] = $result['message'];
+                continue;
+            }
+            foreach ($result['data'] as $row) {
+                $row['source'] = strtoupper($source);
+                $data[] = $row;
+            }
+        }
+
+        return array('ok' => $ok, 'message' => $ok ? 'ok' : implode(' ', $messages), 'data' => $data);
+    }
+
+    /**
      * Row-level breakdown behind calc(): one row per (BOM line, shop it
      * names) — the "show your work" view, listing exactly which cutoff VIN
      * and how many matching WIP units produced that row's contribution.
@@ -253,6 +283,7 @@ class Wip_calc_model extends CI_Model
         $bom_rows = $this->db->order_by('part_number', 'asc')->order_by('id', 'asc')->get()->result_array();
 
         $data = array();
+        $total_wip_cache = array(); // shop -> total cached WIP units, regardless of model/suffix
 
         foreach ($bom_rows as $row) {
             $part_number = $row['part_number'] !== '' ? $row['part_number'] : $row['material'];
@@ -273,6 +304,8 @@ class Wip_calc_model extends CI_Model
                 $boundary = null;
                 $cutoff_vin = null;
                 $cutoff_status = 'none'; // none|used|stale
+                $cutoff_position = null; // this VIN's rank (1 = newest) among ALL of the shop's cached units
+                $total_wip = null;
 
                 if ($cutoff !== null) {
                     $found = $this->db->select('id')
@@ -280,8 +313,22 @@ class Wip_calc_model extends CI_Model
                         ->get('wip_data')->row_array();
                     $cutoff_vin = $cutoff['vin'];
                     $cutoff_status = $found ? 'used' : 'stale';
+
+                    if (!isset($total_wip_cache[$shop])) {
+                        $total_wip_cache[$shop] = $this->db
+                            ->where(array('source' => $source, 'shop' => $shop))
+                            ->count_all_results('wip_data');
+                    }
+                    $total_wip = $total_wip_cache[$shop];
+
                     if ($found) {
                         $boundary = (int) $found['id'];
+                        // Position among every unit of this shop (not just ones
+                        // matching this row's model/suffix) — "unit 131 of 200".
+                        $cutoff_position = (int) $this->db
+                            ->where(array('source' => $source, 'shop' => $shop))
+                            ->where('id >=', $boundary)
+                            ->count_all_results('wip_data');
                     }
                 }
 
@@ -313,6 +360,8 @@ class Wip_calc_model extends CI_Model
                     'shop_code'            => $shop_code,
                     'cutoff_vin'           => $cutoff_vin,
                     'cutoff_status'        => $cutoff_status,
+                    'cutoff_position'      => $cutoff_position,
+                    'total_wip'            => $total_wip,
                     'unit_count'           => $unit_count,
                     'qty'                  => $qty_str,
                     // Spells out the suffix inline so the formula is self-explanatory
@@ -326,6 +375,111 @@ class Wip_calc_model extends CI_Model
         }
 
         return array('ok' => true, 'message' => 'ok', 'data' => $data);
+    }
+
+    /**
+     * Full suffix-level breakdown for one part_number within one shop — every
+     * suffix BOM defines for it (even ones with 0 matching WIP units, unlike
+     * calc_detail()'s filtered list), plus where this part's shared cutoff
+     * VIN sits among ALL of that shop's cached units. Powers the "Formula
+     * Detail" modal on the Detail page.
+     *
+     * @return array{ok:bool, message?:string, part_number?:string, material_description?:string,
+     *     shop_label?:string, shop_code?:string, cutoff?:array|null, total_wip?:int, suffixes?:array, grand_subtotal?:string}
+     */
+    public function part_breakdown($source, $shop_code_raw, $part_number_raw)
+    {
+        $resolved = $this->resolve_shop_code($shop_code_raw);
+        if ($resolved === null || $resolved['source'] !== $source) {
+            return array('ok' => false, 'message' => 'Unknown Shop for this KAP line.');
+        }
+        $shop = $resolved['shop'];
+        $shop_code = $resolved['shop_code'];
+
+        $part_number = trim((string) $part_number_raw);
+        if ($part_number === '') {
+            return array('ok' => false, 'message' => 'Part Number is required.');
+        }
+
+        $total_wip = (int) $this->db
+            ->where(array('source' => $source, 'shop' => $shop))
+            ->count_all_results('wip_data');
+
+        $cutoff = $this->db
+            ->where(array('shop_code' => $shop_code, 'part_number' => $part_number))
+            ->get($this->table)->row_array();
+
+        $boundary = null;
+        $cutoff_info = null;
+        if ($cutoff) {
+            $found = $this->db->select('id')
+                ->where(array('source' => $source, 'shop' => $shop, 'vin' => $cutoff['vin']))
+                ->get('wip_data')->row_array();
+
+            if ($found) {
+                $boundary = (int) $found['id'];
+                $position = (int) $this->db
+                    ->where(array('source' => $source, 'shop' => $shop))
+                    ->where('id >=', $boundary)
+                    ->count_all_results('wip_data');
+                $cutoff_info = array('vin' => $cutoff['vin'], 'status' => 'used', 'position' => $position, 'total' => $total_wip);
+            } else {
+                $cutoff_info = array('vin' => $cutoff['vin'], 'status' => 'stale', 'position' => null, 'total' => $total_wip);
+            }
+        }
+
+        // Every BOM line for this part_number (or, for parts with a blank
+        // part_number, its material code) in this shop — every suffix it's
+        // defined for, regardless of whether any WIP unit currently matches.
+        $this->db->select('material, material_description, model, suffix, qty')->from('bom');
+        $this->db->group_start();
+        $this->db->where('part_number', $part_number);
+        $this->db->or_group_start()->where('part_number', '')->where('material', $part_number)->group_end();
+        $this->db->group_end();
+        $this->db->group_start();
+        foreach (array_unique(array($shop_code, strtoupper($shop_code), strtolower($shop_code))) as $variant) {
+            $this->db->or_where('FIND_IN_SET(' . $this->db->escape($variant) . ', shop_code) >', 0);
+        }
+        $this->db->group_end();
+        $bom_rows = $this->db->order_by('model', 'asc')->order_by('suffix', 'asc')->get()->result_array();
+
+        if (empty($bom_rows)) {
+            return array('ok' => false, 'message' => 'No BOM lines found for this part in this shop.');
+        }
+
+        $material_description = $bom_rows[0]['material_description'];
+        $suffixes = array();
+        $grand_subtotal = 0.0;
+
+        foreach ($bom_rows as $row) {
+            $counts = $this->get_counts($source, $shop, $boundary);
+            $key = $this->match_key($row['model'], $row['suffix']);
+            $unit_count = $counts[$key] ?? 0;
+            $qty = (float) $row['qty'];
+            $subtotal = $unit_count * $qty;
+            $grand_subtotal += $subtotal;
+
+            $suffixes[] = array(
+                'model'      => $row['model'],
+                'suffix'     => $row['suffix'],
+                'material'   => $row['material'],
+                'qty'        => $this->trim_qty($qty),
+                'unit_count' => $unit_count,
+                'subtotal'   => $this->trim_qty($subtotal),
+            );
+        }
+
+        return array(
+            'ok'                   => true,
+            'part_number'          => $part_number,
+            'material_description' => $material_description,
+            'shop_label'           => $this->config->item('wip_shop_labels')[$shop] ?? strtoupper($shop),
+            'shop_code'            => $shop_code,
+            'cutoff'               => $cutoff_info,
+            'total_wip'            => $total_wip,
+            'suffixes'             => $suffixes,
+            'grand_subtotal'       => $this->trim_qty($grand_subtotal),
+        );
     }
 
     /**
@@ -376,9 +530,15 @@ class Wip_calc_model extends CI_Model
         $grandTotal = 0.0;
 
         foreach ($result['data'] as $i => $row) {
-            $vinDisplay = $row['cutoff_vin']
-                ? $row['cutoff_vin'] . ($row['cutoff_status'] === 'stale' ? ' (stale — not found, totaled instead)' : '')
-                : 'Total (no cutoff set)';
+            if (!$row['cutoff_vin']) {
+                $vinDisplay = 'Total (no cutoff set)';
+            } elseif ($row['cutoff_status'] === 'stale') {
+                $vinDisplay = $row['cutoff_vin'] . ' (stale — not found, totaled instead)';
+            } else {
+                // Where this cutoff VIN sits among ALL of the shop's cached
+                // units (not just ones matching this row's own model/suffix).
+                $vinDisplay = $row['cutoff_vin'] . " (unit {$row['cutoff_position']} of {$row['total_wip']})";
+            }
 
             $rowData = array(
                 $i + 1,
@@ -656,6 +816,191 @@ class Wip_calc_model extends CI_Model
         $sheet->getPageSetup()->setRowsToRepeatAtTopByStartAndEnd($headerRow, $subHeaderRow);
 
         $filename = 'wip_calc_' . $source . '_' . date('Ymd_His') . '.xlsx';
+
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: max-age=0');
+
+        $writer = new XlsxWriter($spreadsheet);
+        $writer->save('php://output');
+    }
+
+    /**
+     * KAP1 + KAP2's WIP Calc lists, concatenated (see calc_combined()), as
+     * one styled .xlsx report — same layout as export(), plus a leading
+     * Source column (KAP1/KAP2) since rows from both lines are mixed
+     * together here.
+     */
+    public function export_combined($title, $hide_zero = false)
+    {
+        $result = $this->calc_combined();
+        if (!$result['ok']) {
+            show_error($result['message'], 502, 'WIP Calc unavailable');
+
+            return;
+        }
+
+        if ($hide_zero) {
+            $result['data'] = array_values(array_filter($result['data'], function ($row) {
+                return (float) $row['total'] !== 0.0;
+            }));
+        }
+
+        // Both KAP lines share the same shop keys (weld/toso/assy), just
+        // different underlying shop_codes — either source's config works here.
+        $shop_codes = $this->config->item('wip_calc_shop_codes')['kap1'] ?? array();
+        $shop_labels = $this->config->item('wip_shop_labels');
+        $shop_keys = array_keys($shop_codes);
+
+        $value_keys = array();
+        $groups = array();
+        foreach ($shop_keys as $k) {
+            $groups[] = array($shop_labels[$k] ?? strtoupper($k), $k);
+            foreach (array('_gross', '_cutoff', '') as $suffix) {
+                $value_keys[] = $k . $suffix;
+            }
+        }
+        $groups[] = array('Total', 'total');
+        foreach (array('total_gross', 'total_cutoff', 'total') as $k) {
+            $value_keys[] = $k;
+        }
+        $vin_keys = array_map(function ($k) {
+            return $k . '_vin';
+        }, $shop_keys);
+
+        $lastCol = chr(ord('A') + 5 + count($value_keys) + count($vin_keys) - 1);
+        $firstShopCol = chr(ord('A') + 5); // after No, Source, Part Number, Material Description, Shop Code
+        $lastNumericCol = chr(ord($firstShopCol) + count($value_keys) - 1);
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('WIP Calc');
+
+        $sheet->setCellValue('A1', strtoupper($title));
+        $sheet->mergeCells("A1:{$lastCol}1");
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+        $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+
+        $sheet->setCellValue('A2', 'Generated: ' . date('d F Y H:i'));
+        $sheet->mergeCells("A2:{$lastCol}2");
+        $sheet->getStyle('A2')->getFont()->setItalic(true)->setSize(9)->getColor()->setRGB('8B93A1');
+        $sheet->getStyle('A2')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+
+        $headerRow = 4;
+        $subHeaderRow = 5;
+        $firstDataRow = 6;
+
+        foreach (array('A' => 'No', 'B' => 'Source', 'C' => 'Part Number', 'D' => 'Material Description', 'E' => 'Shop Code') as $col => $label) {
+            $sheet->setCellValue("{$col}{$headerRow}", $label);
+            $sheet->mergeCells("{$col}{$headerRow}:{$col}{$subHeaderRow}");
+        }
+
+        $col = $firstShopCol;
+        foreach ($groups as $group) {
+            list($label, ) = $group;
+            $endCol = chr(ord($col) + 2);
+            $sheet->setCellValue("{$col}{$headerRow}", $label);
+            $sheet->mergeCells("{$col}{$headerRow}:{$endCol}{$headerRow}");
+            $sheet->fromArray(array('Gross', 'Cutoff', 'Net'), null, "{$col}{$subHeaderRow}");
+            $col = chr(ord($endCol) + 1);
+        }
+        foreach ($shop_keys as $k) {
+            $sheet->setCellValue("{$col}{$headerRow}", ($shop_labels[$k] ?? strtoupper($k)) . ' Cutoff VIN');
+            $sheet->mergeCells("{$col}{$headerRow}:{$col}{$subHeaderRow}");
+            $col++;
+        }
+
+        $sheet->getStyle("A{$headerRow}:{$lastCol}{$subHeaderRow}")->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle("A{$headerRow}:{$lastCol}{$subHeaderRow}")->getFill()
+            ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('1F6FEB');
+        $sheet->getStyle("A{$headerRow}:{$lastCol}{$subHeaderRow}")->getAlignment()
+            ->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER)->setWrapText(true);
+        $sheet->getRowDimension($headerRow)->setRowHeight(20);
+        $sheet->getRowDimension($subHeaderRow)->setRowHeight(20);
+        $sheet->getStyle("{$firstShopCol}{$subHeaderRow}:{$lastNumericCol}{$subHeaderRow}")->getFont()->setSize(9)->setBold(false);
+
+        $r = $firstDataRow;
+        $totals = array_fill_keys($value_keys, 0.0);
+
+        foreach ($result['data'] as $i => $row) {
+            $rowData = array_merge(
+                array($i + 1, $row['source'], $row['part_number'], $row['material_description'], $row['shop_code']),
+                array_map(function ($k) use ($row) {
+                    return (float) $row[$k];
+                }, $value_keys),
+                array_map(function ($k) use ($row) {
+                    return $row[$k];
+                }, $vin_keys)
+            );
+            $sheet->fromArray($rowData, null, "A{$r}", true);
+
+            foreach ($value_keys as $k) {
+                $totals[$k] += (float) $row[$k];
+            }
+
+            $r++;
+        }
+
+        foreach ($value_keys as $k) {
+            $totals[$k] = (float) $this->trim_qty($totals[$k]);
+        }
+
+        $sheet->setCellValue("A{$r}", 'GRAND TOTAL');
+        $sheet->mergeCells("A{$r}:E{$r}");
+        $col = $firstShopCol;
+        foreach ($value_keys as $k) {
+            $sheet->setCellValue("{$col}{$r}", $totals[$k]);
+            $col++;
+        }
+        $sheet->getStyle("A{$r}:{$lastCol}{$r}")->getFont()->setBold(true);
+        $sheet->getStyle("A{$r}:{$lastCol}{$r}")->getFill()
+            ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E4E9F0');
+
+        $col = $firstShopCol;
+        foreach ($value_keys as $k) {
+            $values = array_column($result['data'], $k);
+            $values[] = $totals[$k];
+            $sheet->getStyle("{$col}{$firstDataRow}:{$col}{$r}")->getNumberFormat()->setFormatCode($this->column_format($values));
+            $col++;
+        }
+
+        $sheet->getStyle("A{$headerRow}:B{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle("{$firstShopCol}{$firstDataRow}:{$lastNumericCol}{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+
+        $col = $firstShopCol;
+        foreach ($groups as $group) {
+            $sheet->getStyle("{$col}{$firstDataRow}:" . chr(ord($col) + 1) . $r)->getFont()->getColor()->setRGB('8B93A1');
+            $col = chr(ord($col) + 3);
+        }
+
+        $this->zebra_stripe($sheet, "A{$firstDataRow}:{$lastCol}" . ($r - 1));
+
+        $sheet->getStyle("A{$headerRow}:{$lastCol}{$r}")->getBorders()->getAllBorders()
+            ->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('C9CFD8');
+
+        $col = $firstShopCol;
+        foreach ($groups as $group) {
+            $sheet->getStyle("{$col}{$headerRow}:{$col}{$r}")->getBorders()->getLeft()
+                ->setBorderStyle(Border::BORDER_MEDIUM)->getColor()->setRGB('4F8CFF');
+            $col = chr(ord($col) + 3);
+        }
+
+        $sheet->getStyle("A{$r}:{$lastCol}{$r}")->getBorders()->getTop()->setBorderStyle(Border::BORDER_DOUBLE);
+
+        foreach (range('A', $lastCol) as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+        $sheet->getColumnDimension('D')->setAutoSize(false)->setWidth(38);
+
+        $sheet->freezePane("A{$firstDataRow}");
+
+        $sheet->getPageSetup()
+            ->setOrientation(PageSetup::ORIENTATION_LANDSCAPE)
+            ->setFitToWidth(1)
+            ->setFitToHeight(0);
+        $sheet->getPageSetup()->setRowsToRepeatAtTopByStartAndEnd($headerRow, $subHeaderRow);
+
+        $filename = 'wip_calc_kap1_kap2_' . date('Ymd_His') . '.xlsx';
 
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         header('Content-Disposition: attachment; filename="' . $filename . '"');

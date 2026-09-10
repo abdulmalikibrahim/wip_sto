@@ -78,6 +78,7 @@ $route['wip/kap1/calc/export'] = 'wip/kap1_calc_export';
 $route['wip/kap1/calc/detail'] = 'wip/kap1_calc_detail';
 $route['wip/kap1/calc/detail/data'] = 'wip/kap1_calc_detail_data';
 $route['wip/kap1/calc/detail/export'] = 'wip/kap1_calc_detail_export';
+$route['wip/kap1/calc/detail/breakdown'] = 'wip/kap1_calc_detail_breakdown';
 $route['wip/kap1/calc/upload'] = 'wip/kap1_calc_upload';
 $route['wip/kap1/calc/cutoff'] = 'wip/kap1_calc_cutoff_set';
 $route['wip/kap2'] = 'wip/kap2';
@@ -93,8 +94,12 @@ $route['wip/kap2/calc/export'] = 'wip/kap2_calc_export';
 $route['wip/kap2/calc/detail'] = 'wip/kap2_calc_detail';
 $route['wip/kap2/calc/detail/data'] = 'wip/kap2_calc_detail_data';
 $route['wip/kap2/calc/detail/export'] = 'wip/kap2_calc_detail_export';
+$route['wip/kap2/calc/detail/breakdown'] = 'wip/kap2_calc_detail_breakdown';
 $route['wip/kap2/calc/upload'] = 'wip/kap2_calc_upload';
 $route['wip/kap2/calc/cutoff'] = 'wip/kap2_calc_cutoff_set';
+$route['wip/calc-combined'] = 'wip/calc_combined';
+$route['wip/calc-combined/data'] = 'wip/calc_combined_data';
+$route['wip/calc-combined/export'] = 'wip/calc_combined_export';
 
 // Akun (CRUD)
 $route['akun'] = 'akun/index';

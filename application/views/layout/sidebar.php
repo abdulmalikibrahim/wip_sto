@@ -23,6 +23,9 @@ $is_admin = ($auth_user['role'] ?? '') === 'admin';
         <a class="nav-link ps-4 <?= $active_menu === 'wip_calc_kap2' ? 'active' : '' ?>" href="<?= base_url('wip/kap2/calc') ?>">
             <i class="bi bi-calculator"></i> WIP Calc. KAP 2
         </a>
+        <a class="nav-link ps-4 <?= $active_menu === 'wip_calc_combined' ? 'active' : '' ?>" href="<?= base_url('wip/calc-combined') ?>">
+            <i class="bi bi-collection"></i> WIP Calc. KAP 1 &amp; 2
+        </a>
 
         <?php if ($is_admin): ?>
         <div class="nav-section-label">Administration</div>

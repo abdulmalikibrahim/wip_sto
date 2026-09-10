@@ -162,6 +162,21 @@ class Wip extends MY_Controller
         $this->Wip_calc_model->export_detail('kap1', 'WIP Calc Detail - KAP 1');
     }
 
+    /**
+     * Full suffix breakdown for one part_number + shop (AJAX only — powers
+     * the "Formula Detail" modal on the Detail page).
+     */
+    public function kap1_calc_detail_breakdown()
+    {
+        $this->load->model('Wip_calc_model');
+        $result = $this->Wip_calc_model->part_breakdown(
+            'kap1',
+            (string) $this->input->get('shop_code'),
+            (string) $this->input->get('part_number')
+        );
+        $this->output->set_content_type('application/json')->set_output(json_encode($result));
+    }
+
     protected function respond_calc_detail(array $result)
     {
         $rows = array();
@@ -246,6 +261,17 @@ class Wip extends MY_Controller
         $this->Wip_calc_model->export_detail('kap2', 'WIP Calc Detail - KAP 2');
     }
 
+    public function kap2_calc_detail_breakdown()
+    {
+        $this->load->model('Wip_calc_model');
+        $result = $this->Wip_calc_model->part_breakdown(
+            'kap2',
+            (string) $this->input->get('shop_code'),
+            (string) $this->input->get('part_number')
+        );
+        $this->output->set_content_type('application/json')->set_output(json_encode($result));
+    }
+
     public function kap2_calc_upload()
     {
         $this->handle_calc_upload('kap2');
@@ -254,6 +280,46 @@ class Wip extends MY_Controller
     public function kap2_calc_cutoff_set()
     {
         $this->handle_calc_cutoff_set('kap2');
+    }
+
+    /**
+     * "WIP Calc. KAP 1 & 2" — KAP1's and KAP2's calc() lists shown together
+     * (a plain union, not a re-aggregation), tagged with a Source column so
+     * it's clear which line each row came from. Read-only: cutoff VINs are
+     * still managed from the individual KAP1/KAP2 Calc pages.
+     */
+    public function calc_combined()
+    {
+        $data['title'] = 'WIP Calc - KAP 1 & 2';
+        $data['shops'] = $this->config->item('wip_shop_labels');
+        $data['page_js'] = 'assets/js/wip_calc_combined.js';
+        $this->render('wip/calc_combined', $data, 'wip_calc_combined');
+    }
+
+    public function calc_combined_data()
+    {
+        $this->load->model('Wip_calc_model');
+        $result = $this->Wip_calc_model->calc_combined();
+
+        $rows = array();
+        foreach ($result['data'] as $i => $r) {
+            $rows[] = array_merge(array('no' => $i + 1), $r);
+        }
+
+        $this->output
+            ->set_content_type('application/json')
+            ->set_output(json_encode(array(
+                'status'  => $result['ok'] ? 'success' : 'error',
+                'message' => $result['message'],
+                'data'    => $rows,
+            )));
+    }
+
+    public function calc_combined_export()
+    {
+        $this->load->model('Wip_calc_model');
+        $hide_zero = $this->input->get('hide_zero') === '1';
+        $this->Wip_calc_model->export_combined('WIP Calc - KAP 1 & 2', $hide_zero);
     }
 
     protected function handle_calc_cutoff_set($source)

@@ -24,7 +24,10 @@
                     return '<span class="text-warning" title="VIN not found in the current WIP data — falling back to total">' +
                         esc(value) + ' (stale)</span>';
                 }
-                return esc(value);
+                var position = (row.cutoff_position != null)
+                    ? ' <span class="text-secondary small">(unit ' + esc(row.cutoff_position) + ' of ' + esc(row.total_wip) + ')</span>'
+                    : '';
+                return esc(value) + position;
             }
         },
         {
@@ -55,38 +58,72 @@
         return '<dt class="col-5">' + esc(label) + '</dt><dd class="col-7">' + value + '</dd>';
     }
 
+    function renderBreakdown(resp) {
+        var vinDisplay;
+        if (!resp.cutoff) {
+            vinDisplay = '<span class="text-secondary">Total (no cutoff set)</span>';
+        } else if (resp.cutoff.status === 'stale') {
+            vinDisplay = '<span class="text-warning">' + esc(resp.cutoff.vin) + ' (stale — not found, totaled instead)</span>';
+        } else {
+            vinDisplay = esc(resp.cutoff.vin) +
+                ' <span class="text-secondary">(unit ' + esc(resp.cutoff.position) + ' of ' + esc(resp.cutoff.total) +
+                ' in ' + esc(resp.shop_label) + ')</span>';
+        }
+
+        var rows = resp.suffixes.map(function (s) {
+            var zero = parseFloat(s.subtotal) === 0;
+            return '<tr' + (zero ? ' class="text-secondary"' : '') + '>' +
+                '<td>' + esc(s.model) + '</td>' +
+                '<td>' + esc(s.suffix) + '</td>' +
+                '<td class="small">' + esc(s.material) + '</td>' +
+                '<td class="text-end">' + esc(s.qty) + '</td>' +
+                '<td class="text-end">' + esc(s.unit_count) + '</td>' +
+                '<td class="text-end' + (zero ? '' : ' fw-semibold text-body') + '">' + esc(s.subtotal) + '</td>' +
+                '</tr>';
+        }).join('');
+
+        $modalFormulaBody.html(
+            '<dl class="row mb-3 small">' +
+                fieldRow('Part Number', esc(resp.part_number)) +
+                fieldRow('Material Description', esc(resp.material_description)) +
+                fieldRow('Shop', esc(resp.shop_label)) +
+                fieldRow('Cutoff VIN', vinDisplay) +
+            '</dl>' +
+            '<div class="text-secondary small mb-2">Every suffix this part is defined for in the BOM, and how many of the shop\'s cached WIP units matched each one:</div>' +
+            '<div class="table-responsive">' +
+                '<table class="table table-sm table-hover mb-0">' +
+                    '<thead><tr><th>Model</th><th>Suffix</th><th>Material</th><th class="text-end">BOM Qty</th><th class="text-end">Matching Units</th><th class="text-end">Subtotal</th></tr></thead>' +
+                    '<tbody>' + rows + '</tbody>' +
+                    '<tfoot><tr class="fw-semibold border-top">' +
+                        '<td colspan="5" class="text-end">Total</td>' +
+                        '<td class="text-end text-success">' + esc(resp.grand_subtotal) + '</td>' +
+                    '</tr></tfoot>' +
+                '</table>' +
+            '</div>'
+        );
+    }
+
     $('#tblWipCalcDetail').on('click', '.btn-formula', function () {
         var rowData = table.row($(this).closest('tr')).data();
         if (!rowData) return;
 
-        var vinDisplay;
-        if (!rowData.cutoff_vin) {
-            vinDisplay = '<span class="text-secondary">Total (no cutoff set)</span>';
-        } else if (rowData.cutoff_status === 'stale') {
-            vinDisplay = '<span class="text-warning">' + esc(rowData.cutoff_vin) + ' (stale — not found, totaled instead)</span>';
-        } else {
-            vinDisplay = esc(rowData.cutoff_vin);
-        }
-
-        $modalFormulaBody.html(
-            '<dl class="row mb-3 small">' +
-                fieldRow('Part Number', esc(rowData.part_number)) +
-                fieldRow('Material', esc(rowData.material)) +
-                fieldRow('Model', esc(rowData.model)) +
-                fieldRow('Suffix', esc(rowData.suffix)) +
-                fieldRow('Shop', esc(rowData.shop_label)) +
-                fieldRow('Cutoff VIN', vinDisplay) +
-            '</dl>' +
-            '<div class="text-center border-top pt-3">' +
-                '<div class="text-secondary small mb-1">Matching WIP units × Qty per unit (BOM)</div>' +
-                '<div class="fs-4">' +
-                    '<strong>' + esc(rowData.unit_count) + '</strong> unit &times; <strong>' + esc(rowData.qty) + '</strong>' +
-                    ' = <strong class="text-success">' + esc(rowData.subtotal) + '</strong>' +
-                '</div>' +
-            '</div>'
-        );
-
+        $modalFormulaBody.html('<div class="text-center text-secondary py-4"><span class="spinner-border spinner-border-sm me-2"></span>Loading…</div>');
         bootstrap.Modal.getOrCreateInstance('#modalFormula').show();
+
+        $.getJSON(BASE_URL + WIP_CALC_SOURCE + '/calc/detail/breakdown', {
+            part_number: rowData.part_number,
+            shop_code: rowData.shop_code
+        })
+            .done(function (resp) {
+                if (!resp.ok) {
+                    $modalFormulaBody.html('<div class="alert alert-danger mb-0">' + esc(resp.message || 'Failed to load this part\'s breakdown.') + '</div>');
+                    return;
+                }
+                renderBreakdown(resp);
+            })
+            .fail(function () {
+                $modalFormulaBody.html('<div class="alert alert-danger mb-0">Failed to reach the server.</div>');
+            });
     });
 
     function load() {
