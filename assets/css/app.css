@@ -136,6 +136,25 @@ a { color: var(--app-accent); }
 .stat-card .stat-value { font-size: 1.5rem; font-weight: 700; line-height: 1; }
 .stat-card .stat-label { color: var(--app-text-muted); font-size: 0.82rem; }
 
+/* ---------- BOM model filter cards ---------- */
+.model-card {
+    background-color: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: 0.6rem;
+    padding: 0.7rem 0.9rem;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    transition: border-color .15s ease, background-color .15s ease;
+}
+.model-card:hover { border-color: var(--app-accent); }
+.model-card.active {
+    border-color: var(--app-accent);
+    background-color: rgba(79, 140, 255, 0.14);
+}
+.model-card .model-card-code { font-weight: 700; font-size: 0.95rem; }
+.model-card .model-card-count { color: var(--app-text-muted); font-size: 0.78rem; margin-top: 0.1rem; }
+
 /* ---------- WIP vin cards ---------- */
 .wip-card {
     background-color: var(--app-surface);
@@ -229,12 +248,31 @@ a { color: var(--app-accent); }
     min-height: 160px;
 }
 
+.page-loading-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(14, 17, 22, 0.82);
+}
+
+.collapse-toggle-icon { transition: transform .2s ease; }
+.collapse-toggle[aria-expanded="true"] .collapse-toggle-icon { transform: rotate(180deg); }
+
 .shop-tabs .nav-link { color: #c3c8d1; }
 .shop-tabs .nav-link.active {
     background-color: var(--app-surface-2);
     color: #fff;
     border-color: var(--app-border) var(--app-border) transparent;
 }
+
+/* Divider between grouped columns (e.g. Welding | Toso | Assy | Total on
+   the WIP Calc table) — marks where one group's Net/Gross/Cutoff ends and
+   the next one's begins. */
+.col-group-start { border-left: 2px solid var(--app-accent) !important; }
 
 @media (max-width: 991.98px) {
     .app-sidebar {

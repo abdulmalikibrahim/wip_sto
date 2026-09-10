@@ -30,7 +30,6 @@ class Akun extends MY_Controller
                 'id'         => $r['id'],
                 'username'   => $r['username'],
                 'full_name'  => $r['full_name'],
-                'email'      => $r['email'],
                 'role'       => $r['role'],
                 'is_active'  => (int) $r['is_active'],
                 'last_login' => $r['last_login'],
@@ -51,7 +50,6 @@ class Akun extends MY_Controller
     {
         $this->form_validation->set_rules('username', 'Username', 'required|trim|min_length[3]|max_length[50]');
         $this->form_validation->set_rules('full_name', 'Full Name', 'required|trim');
-        $this->form_validation->set_rules('email', 'Email', 'valid_email');
         $this->form_validation->set_rules('password', 'Password', 'required|min_length[6]');
         $this->form_validation->set_rules('role', 'Role', 'required|in_list[admin,user]');
 
@@ -72,7 +70,6 @@ class Akun extends MY_Controller
             'username'  => $username,
             'password'  => password_hash($this->input->post('password'), PASSWORD_DEFAULT),
             'full_name' => $this->input->post('full_name', TRUE),
-            'email'     => $this->input->post('email', TRUE),
             'role'      => $this->input->post('role'),
             'is_active' => $this->input->post('is_active') ? 1 : 0,
         ));
@@ -83,7 +80,6 @@ class Akun extends MY_Controller
     public function update($id)
     {
         $this->form_validation->set_rules('full_name', 'Full Name', 'required|trim');
-        $this->form_validation->set_rules('email', 'Email', 'valid_email');
         $this->form_validation->set_rules('role', 'Role', 'required|in_list[admin,user]');
 
         if ($this->form_validation->run() === FALSE) {
@@ -101,7 +97,6 @@ class Akun extends MY_Controller
 
         $data = array(
             'full_name' => $this->input->post('full_name', TRUE),
-            'email'     => $this->input->post('email', TRUE),
             'role'      => $this->input->post('role'),
             'is_active' => $this->input->post('is_active') ? 1 : 0,
         );

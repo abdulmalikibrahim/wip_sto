@@ -60,10 +60,42 @@
     function setLoading(isLoading) {
         table.processing(isLoading);
         $('#wipLoading').toggleClass('d-none', !isLoading);
-        $('#btnRefresh, #btnDownload, #shopTabs .nav-link').prop('disabled', isLoading);
-        $('#btnRefresh i').toggleClass('spin', isLoading);
+        $('#btnGetWip, #btnDownload, #shopTabs .nav-link').prop('disabled', isLoading);
+        $('#btnGetWip i').toggleClass('spin', isLoading);
     }
 
+    function showUpdated(updatedAt) {
+        if (!updatedAt) {
+            $('#wipLastUpdated').text('');
+            return;
+        }
+        // updatedAt comes as "YYYY-MM-DD HH:MM:SS" from the server.
+        var d = new Date(updatedAt.replace(' ', 'T'));
+        var label = isNaN(d.getTime()) ? updatedAt : d.toLocaleString('en-GB');
+        $('#wipLastUpdated').text('Updated ' + label);
+    }
+
+    function applyResult(resp, clearOnError) {
+        if (resp.status !== 'success') {
+            $('#wipAlert').removeClass('d-none').text(resp.message || 'Failed to load data.');
+            if (clearOnError) {
+                table.clear().draw();
+                renderCards([]);
+                $('#wipEmptyHint').addClass('d-none');
+                showUpdated(null);
+            }
+            return;
+        }
+        table.clear().rows.add(resp.data).draw();
+        renderCards(resp.data);
+        showUpdated(resp.updated_at);
+        $('#wipEmptyHint').toggleClass('d-none', resp.data.length > 0);
+    }
+
+    /**
+     * Load the currently cached data for a shop straight from the database —
+     * this never touches the live WIP server.
+     */
     function loadShop(shop) {
         currentShop = shop;
         $('#wipAlert').addClass('d-none').text('');
@@ -71,20 +103,40 @@
 
         $.getJSON(BASE_URL + WIP_SOURCE + '/data/' + shop)
             .done(function (resp) {
-                if (resp.status !== 'success') {
-                    $('#wipAlert').removeClass('d-none').text(resp.message || 'Failed to load data.');
-                    table.clear().draw();
-                    renderCards([]);
-                    return;
-                }
-                table.clear().rows.add(resp.data).draw();
-                renderCards(resp.data);
-                $('#wipLastUpdated').text('Updated ' + new Date().toLocaleTimeString('en-GB'));
+                applyResult(resp, true);
             })
             .fail(function () {
                 $('#wipAlert').removeClass('d-none').text('Failed to reach the server.');
                 table.clear().draw();
                 renderCards([]);
+                showUpdated(null);
+            })
+            .always(function () {
+                setLoading(false);
+            });
+    }
+
+    /**
+     * "Get Data WIP": pull fresh data from the live WIP server for the current
+     * shop, replacing its cached rows in the database. On failure the cached
+     * data already shown is left as-is.
+     */
+    function getWip(shop) {
+        $('#wipAlert').addClass('d-none').text('');
+        setLoading(true);
+
+        $.post(BASE_URL + WIP_SOURCE + '/getwip/' + shop)
+            .done(function (resp) {
+                applyResult(resp, false);
+                if (resp.status === 'success') {
+                    toast('success', 'WIP data refreshed from server.');
+                } else {
+                    toast('error', resp.message || 'Failed to reach the WIP server.');
+                }
+            })
+            .fail(function () {
+                $('#wipAlert').removeClass('d-none').text('Failed to reach the server.');
+                toast('error', 'Failed to reach the server.');
             })
             .always(function () {
                 setLoading(false);
@@ -97,12 +149,34 @@
         loadShop($(this).data('shop'));
     });
 
-    $('#btnRefresh').on('click', function () {
-        loadShop(currentShop);
+    $('#btnGetWip').on('click', function () {
+        getWip(currentShop);
     });
 
     $('#btnDownload').on('click', function () {
         window.location.href = BASE_URL + WIP_SOURCE + '/export/' + currentShop;
+    });
+
+    // Upload dropzone UX
+    var $wipFile = $('#wip_file');
+    var $wipDz = $('#dropzoneWip');
+    $wipFile.on('change', function () {
+        var name = this.files.length ? this.files[0].name : null;
+        $('#dropzoneWipLabel').text(name || 'Click to choose an .xlsx file or drag it here');
+    });
+    $wipDz.on('dragover', function (e) {
+        e.preventDefault();
+        $wipDz.addClass('dragover');
+    }).on('dragleave', function () {
+        $wipDz.removeClass('dragover');
+    }).on('drop', function (e) {
+        e.preventDefault();
+        $wipDz.removeClass('dragover');
+        var files = e.originalEvent.dataTransfer.files;
+        if (files.length) {
+            $wipFile[0].files = files;
+            $wipFile.trigger('change');
+        }
     });
 
     $('#btnViewTable').on('click', function () {

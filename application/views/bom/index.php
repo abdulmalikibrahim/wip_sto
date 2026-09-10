@@ -1,7 +1,7 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
     <h1 class="page-title mb-0">Master BOM</h1>
     <div class="d-flex gap-2">
-        <a href="<?= base_url('bom/template') ?>" class="btn btn-outline-secondary btn-sm">
+        <a href="<?= base_url('bom/template') ?>" class="btn btn-secondary btn-sm">
             <i class="bi bi-download me-1"></i> Download Template
         </a>
         <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
@@ -10,6 +10,11 @@
         </button>
         <?php endif; ?>
     </div>
+</div>
+
+<div id="bomUploadOverlay" class="page-loading-overlay d-none">
+    <div class="spinner-border text-primary" role="status"></div>
+    <div class="mt-2 small text-secondary">Uploading BOM data, please wait...</div>
 </div>
 
 <div class="card mb-3">
@@ -28,6 +33,32 @@
     </div>
 </div>
 
+<?php if (!empty($model_summary)): ?>
+<div class="card mb-3">
+    <div class="card-header">
+        <i class="bi bi-funnel me-1"></i> Filter by Model
+    </div>
+    <div class="card-body">
+        <div class="row g-2" id="modelCards">
+            <div class="col-6 col-sm-4 col-md-3 col-lg-2">
+                <div class="model-card active" data-model="">
+                    <div class="model-card-code">All</div>
+                    <div class="model-card-count"><?= number_format($total_bom) ?> parts</div>
+                </div>
+            </div>
+            <?php foreach ($model_summary as $m): ?>
+            <div class="col-6 col-sm-4 col-md-3 col-lg-2">
+                <div class="model-card" data-model="<?= html_escape($m['model']) ?>">
+                    <div class="model-card-code"><?= html_escape($m['model']) ?></div>
+                    <div class="model-card-count"><?= number_format($m['total']) ?> parts</div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <div class="card">
     <div class="card-header">
         <i class="bi bi-table me-1"></i> BOM List
@@ -40,6 +71,7 @@
                         <th>No</th>
                         <th>Material</th>
                         <th>Katashiki</th>
+                        <th>Model</th>
                         <th>Suffix</th>
                         <th>Component</th>
                         <th>Part Number</th>
@@ -67,8 +99,9 @@
                 </div>
                 <div class="modal-body">
                     <p class="small text-secondary">
-                        File must use the standard template: <strong>Material, Katashiki, Suffix, Component, Material Description, Qty, Uom, Shop Code</strong>.
+                        File must use the standard template: <strong>Material, Katashiki, Model, Suffix, Component, Material Description, Qty, Uom, Shop Code</strong>.
                         <code>part_number</code> will be generated automatically from <code>Component</code> (trailing "-00" removed).
+                        Shop Code can list more than one shop, separated by commas (e.g. <code>WELD3,ASSY3,TOSO3</code>).
                     </p>
                     <label class="upload-dropzone d-block mb-3" id="dropzone">
                         <i class="bi bi-file-earmark-excel fs-2 d-block mb-1"></i>

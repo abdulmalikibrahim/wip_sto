@@ -7,6 +7,7 @@
         { data: 'no', orderable: false, searchable: false },
         { data: 'material' },
         { data: 'katashiki' },
+        { data: 'model' },
         { data: 'suffix' },
         { data: 'component' },
         { data: 'part_number' },
@@ -22,19 +23,37 @@
             orderable: false,
             searchable: false,
             render: function (row) {
-                return '<button class="btn btn-sm btn-outline-danger btn-delete-bom" data-id="' + row.id + '" title="Delete">' +
+                return '<button class="btn btn-sm btn-danger btn-delete-bom" data-id="' + row.id + '" title="Delete">' +
                     '<i class="bi bi-trash"></i></button>';
             }
         });
     }
 
+    var currentModelFilter = '';
+
     var table = $('#tblBom').DataTable($.extend({}, window.APP_DT_DEFAULTS, {
         processing: true,
         serverSide: true,
-        ajax: { url: BASE_URL + 'bom/data', type: 'POST' },
+        ajax: {
+            url: BASE_URL + 'bom/data',
+            type: 'POST',
+            data: function (d) {
+                d.model_filter = currentModelFilter;
+            }
+        },
         columns: columns,
         order: [[1, 'asc']]
     }));
+
+    // Model cards: click to filter the table down to that model, click again
+    // (or click "All") to clear it. Combines with the search box, not replaces it.
+    $('#modelCards').on('click', '.model-card', function () {
+        var $card = $(this);
+        currentModelFilter = $card.data('model') || '';
+        $('#modelCards .model-card').removeClass('active');
+        $card.addClass('active');
+        table.ajax.reload();
+    });
 
     $('#tblBom').on('click', '.btn-delete-bom', function () {
         var id = $(this).data('id');
@@ -57,6 +76,17 @@
                 }
             }, 'json');
         });
+    });
+
+    // Show a loading animation while the file uploads (a real form submit, so
+    // this stays up until the browser navigates away with the server's response).
+    var $uploadForm = $('#modalUpload form');
+    $uploadForm.on('submit', function () {
+        $uploadForm.find('button').prop('disabled', true);
+        $uploadForm.find('button[type="submit"]').html(
+            '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Uploading...'
+        );
+        $('#bomUploadOverlay').removeClass('d-none');
     });
 
     // Upload dropzone UX

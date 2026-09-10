@@ -14,8 +14,14 @@ $is_admin = ($auth_user['role'] ?? '') === 'admin';
         <a class="nav-link ps-4 <?= $active_menu === 'wip_kap1' ? 'active' : '' ?>" href="<?= base_url('wip/kap1') ?>">
             <i class="bi bi-broadcast"></i> KAP 1
         </a>
+        <a class="nav-link ps-4 <?= $active_menu === 'wip_calc_kap1' ? 'active' : '' ?>" href="<?= base_url('wip/kap1/calc') ?>">
+            <i class="bi bi-calculator"></i> WIP Calc. KAP 1
+        </a>
         <a class="nav-link ps-4 <?= $active_menu === 'wip_kap2' ? 'active' : '' ?>" href="<?= base_url('wip/kap2') ?>">
             <i class="bi bi-broadcast-pin"></i> KAP 2
+        </a>
+        <a class="nav-link ps-4 <?= $active_menu === 'wip_calc_kap2' ? 'active' : '' ?>" href="<?= base_url('wip/kap2/calc') ?>">
+            <i class="bi bi-calculator"></i> WIP Calc. KAP 2
         </a>
 
         <?php if ($is_admin): ?>

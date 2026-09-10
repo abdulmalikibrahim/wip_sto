@@ -31,6 +31,13 @@ class Bom_model extends CI_Model
 
         $this->db->from($this->table);
 
+        // Hard filter from the clickable Model cards on the BOM page (not the
+        // free-text search box) — combined with it via AND, not replacing it.
+        $model_filter = trim((string) ($request['model_filter'] ?? ''));
+        if ($model_filter !== '') {
+            $this->db->where('model', $model_filter);
+        }
+
         $search = $request['search']['value'] ?? '';
         if ($search !== '') {
             $this->db->group_start();
@@ -88,7 +95,24 @@ class Bom_model extends CI_Model
     }
 
     /**
-     * Stream the upload template (single sheet, 8 required columns) straight to the browser.
+     * Part count per Model, for the clickable "filter by model" cards on
+     * the Master BOM page. Rows with no Model set are left out of the
+     * cards (they'd have nothing to click on) but are still counted in
+     * the overall "Total BOM Records" stat.
+     */
+    public function model_summary()
+    {
+        return $this->db->select('model, COUNT(*) AS total')
+            ->from($this->table)
+            ->where('model !=', null) // CI3 idiom: value NULL + "!=" operator on the key -> "model IS NOT NULL"
+            ->where('model !=', '')
+            ->group_by('model')
+            ->order_by('model', 'asc')
+            ->get()->result_array();
+    }
+
+    /**
+     * Stream the upload template (single sheet, 9 required columns) straight to the browser.
      */
     public function download_template()
     {
@@ -97,8 +121,8 @@ class Bom_model extends CI_Model
         $sheet->setTitle('BOM');
 
         $sheet->fromArray($this->required_headers, null, 'A1');
-        $sheet->getStyle('A1:H1')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle('A1:H1')->getFill()
+        $sheet->getStyle('A1:I1')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A1:I1')->getFill()
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('1F6FEB');
 
@@ -109,9 +133,10 @@ class Bom_model extends CI_Model
         $sheet->getStyle('A1:A1048576')->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
 
         // A couple of example rows to guide the user (matching the real BOM format).
+        // Shop Code accepts more than one shop, comma-separated (e.g. "WELD3,ASSY3,TOSO3").
         $examples = array(
-            array('11103102000000', 'W100RG-LMDFJ N4 ( D37D )', 'MN', '09101-BZ030-00', 'TOOL SET, STD L/JACK', 1, 'PC', 'WELD'),
-            array('11103102000000', 'W100RG-LMDFJ N4 ( D37D )', 'MN', '11293-BZ840-00', 'LABEL, TUNE-UP SPECIFICATION INFORMATION', 1, 'PC', 'TOSO'),
+            array('11103102000000', 'A251LA-GMXF', 'D26A', 'MN', '09101-BZ030-00', 'TOOL SET, STD L/JACK', 1, 'PC', 'WELD3,ASSY3,TOSO3'),
+            array('11103102000000', 'A251LA-GMXF', 'D74A', 'MN', '11293-BZ840-00', 'LABEL, TUNE-UP SPECIFICATION INFORMATION', 1, 'PC', 'WELD3,ASSY3'),
         );
 
         $row = 2;
@@ -122,7 +147,7 @@ class Bom_model extends CI_Model
             $row++;
         }
 
-        foreach (range('A', 'H') as $col) {
+        foreach (range('A', 'I') as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
@@ -156,7 +181,7 @@ class Bom_model extends CI_Model
             foreach ($worksheet->getRowIterator() as $row) {
                 $rowIndex = $row->getRowIndex();
 
-                $cellIterator = $row->getCellIterator('A', 'H');
+                $cellIterator = $row->getCellIterator('A', 'I');
                 $cellIterator->setIterateOnlyExistingCells(false);
                 $cells = array();
                 foreach ($cellIterator as $cell) {
@@ -180,13 +205,16 @@ class Bom_model extends CI_Model
 
                 $rows[] = array(
                     'material'             => trim((string) ($cells[0] ?? '')),
-                    'model'                => trim((string) ($cells[1] ?? '')),
-                    'suffix'               => trim((string) ($cells[2] ?? '')),
-                    'component'            => trim((string) ($cells[3] ?? '')),
-                    'material_description' => trim((string) ($cells[4] ?? '')),
-                    'qty'                  => is_numeric($cells[5] ?? null) ? (float) $cells[5] : 0,
-                    'uom'                  => trim((string) ($cells[6] ?? '')),
-                    'shop_code'            => trim((string) ($cells[7] ?? '')),
+                    'katashiki'            => trim((string) ($cells[1] ?? '')),
+                    'model'                => trim((string) ($cells[2] ?? '')),
+                    'suffix'               => trim((string) ($cells[3] ?? '')),
+                    'component'            => trim((string) ($cells[4] ?? '')),
+                    'material_description' => trim((string) ($cells[5] ?? '')),
+                    'qty'                  => is_numeric($cells[6] ?? null) ? (float) $cells[6] : 0,
+                    'uom'                  => trim((string) ($cells[7] ?? '')),
+                    // Shop Code may list more than one shop, comma-separated
+                    // (e.g. "WELD3,ASSY3,TOSO3"); normalize away stray spaces.
+                    'shop_code'            => $this->normalize_shop_code($cells[8] ?? ''),
                 );
             }
 
@@ -213,13 +241,14 @@ class Bom_model extends CI_Model
         $batch = array();
 
         foreach ($rows as $row) {
-            if ($row['material'] === '' && $row['component'] === '') {
+            if (($row['material'] === '' && $row['component'] === '') || $row['shop_code'] === '') {
                 $skipped++;
                 continue;
             }
 
             $batch[] = array(
                 'material'             => $row['material'],
+                'katashiki'            => $row['katashiki'],
                 'model'                => $row['model'],
                 'suffix'               => $row['suffix'],
                 'component'            => $row['component'],
@@ -274,5 +303,20 @@ class Bom_model extends CI_Model
         }
 
         return true;
+    }
+
+    /**
+     * Collapse a Shop Code cell like "WELD3, ASSY3 ,TOSO3" down to
+     * "WELD3,ASSY3,TOSO3" — trims each comma-separated item and drops empty
+     * ones, so downstream matching (e.g. WIP Calc's FIND_IN_SET lookups)
+     * can rely on a plain, space-free comma list.
+     */
+    protected function normalize_shop_code($raw)
+    {
+        $parts = array_filter(array_map('trim', explode(',', (string) $raw)), function ($p) {
+            return $p !== '';
+        });
+
+        return implode(',', $parts);
     }
 }

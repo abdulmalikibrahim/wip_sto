@@ -66,6 +66,16 @@ $config['wip_shop_labels'] = array(
     'assy' => 'Assy',
 );
 
+// ---------------------------------------------------------------
+// WIP Calc — maps each WIP shop key to the BOM `shop_code` that carries
+// its part usage, per KAP line. Used by Wip_calc_model to filter/sum the
+// Master BOM against the cached WIP data for that line.
+// ---------------------------------------------------------------
+$config['wip_calc_shop_codes'] = array(
+    'kap1' => array('weld' => 'WELD3', 'toso' => 'TOSO3', 'assy' => 'ASSY3'),
+    'kap2' => array('weld' => 'WELD4', 'toso' => 'TOSO4', 'assy' => 'ASSY4'),
+);
+
 // Local, untracked overrides (real cookies/credentials for this environment).
 // Copy wip_api_local.example.php -> wip_api_local.php and fill in the real
 // values; this file is gitignored so credentials never reach version control.

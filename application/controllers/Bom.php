@@ -13,6 +13,7 @@ class Bom extends MY_Controller
     {
         $data['title'] = 'Master BOM';
         $data['total_bom'] = $this->Bom_model->count_all();
+        $data['model_summary'] = $this->Bom_model->model_summary();
         $data['page_js'] = 'assets/js/bom.js';
         $this->render('bom/index', $data, 'bom');
     }
@@ -32,7 +33,8 @@ class Bom extends MY_Controller
                 'no'                   => $start + $i + 1,
                 'id'                   => $r['id'],
                 'material'             => $r['material'],
-                'katashiki'            => $r['model'],
+                'katashiki'            => $r['katashiki'],
+                'model'                => $r['model'],
                 'suffix'               => $r['suffix'],
                 'component'            => $r['component'],
                 'part_number'          => $r['part_number'],

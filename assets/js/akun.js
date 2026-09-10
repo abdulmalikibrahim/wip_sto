@@ -10,15 +10,14 @@
             { data: 'no', orderable: false, searchable: false },
             { data: 'username' },
             { data: 'full_name' },
-            { data: 'email', render: function (d) { return d || '<span class="text-secondary">-</span>'; } },
             { data: 'role', render: function (d) { return d === 'admin' ? '<span class="badge text-bg-danger">Admin</span>' : '<span class="badge text-bg-secondary">User</span>'; } },
             { data: 'is_active', render: function (d) { return d == 1 ? '<span class="badge text-bg-success">Active</span>' : '<span class="badge text-bg-secondary">Inactive</span>'; } },
             { data: 'last_login', render: function (d) { return d || '<span class="text-secondary">Never</span>'; } },
             {
                 data: null, orderable: false, searchable: false,
                 render: function (row) {
-                    return '<button class="btn btn-sm btn-outline-primary btn-edit-akun me-1" data-row="' + encodeURIComponent(JSON.stringify(row)) + '"><i class="bi bi-pencil"></i></button>' +
-                        '<button class="btn btn-sm btn-outline-danger btn-delete-akun" data-id="' + row.id + '"><i class="bi bi-trash"></i></button>';
+                    return '<button class="btn btn-sm btn-primary btn-edit-akun me-1" data-row="' + encodeURIComponent(JSON.stringify(row)) + '"><i class="bi bi-pencil"></i></button>' +
+                        '<button class="btn btn-sm btn-danger btn-delete-akun" data-id="' + row.id + '"><i class="bi bi-trash"></i></button>';
                 }
             }
         ]
@@ -43,7 +42,6 @@
         $('#akun_id').val(row.id);
         $('#akun_username').val(row.username).prop('disabled', true);
         $('#akun_full_name').val(row.full_name);
-        $('#akun_email').val(row.email);
         $('#akun_role').val(row.role);
         $('#akun_is_active').prop('checked', row.is_active == 1);
         $('#akun_password').prop('required', false);

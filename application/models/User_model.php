@@ -30,7 +30,7 @@ class User_model extends CI_Model
      */
     public function datatable($request)
     {
-        $columns = array('id', 'username', 'full_name', 'email', 'role', 'is_active', 'last_login');
+        $columns = array('id', 'username', 'full_name', 'role', 'is_active', 'last_login');
 
         $this->db->from($this->table);
 
@@ -39,7 +39,6 @@ class User_model extends CI_Model
             $this->db->group_start();
             $this->db->like('username', $search);
             $this->db->or_like('full_name', $search);
-            $this->db->or_like('email', $search);
             $this->db->or_like('role', $search);
             $this->db->group_end();
         }

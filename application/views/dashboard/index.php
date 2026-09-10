@@ -45,12 +45,12 @@
     <div class="col-lg-7">
         <div class="card h-100">
             <div class="card-header"><i class="bi bi-lightning-charge me-1"></i> Quick Access</div>
-            <div class="card-body d-flex flex-wrap gap-2">
-                <a href="<?= base_url('bom') ?>" class="btn btn-outline-primary btn-sm"><i class="bi bi-list-columns-reverse me-1"></i> Master BOM</a>
-                <a href="<?= base_url('wip/kap1') ?>" class="btn btn-outline-primary btn-sm"><i class="bi bi-broadcast me-1"></i> WIP KAP 1</a>
-                <a href="<?= base_url('wip/kap2') ?>" class="btn btn-outline-primary btn-sm"><i class="bi bi-broadcast-pin me-1"></i> WIP KAP 2</a>
+            <div class="card-body d-flex flex-wrap align-items-start gap-2">
+                <a href="<?= base_url('bom') ?>" class="btn btn-primary btn-sm"><i class="bi bi-list-columns-reverse me-1"></i> Master BOM</a>
+                <a href="<?= base_url('wip/kap1') ?>" class="btn btn-primary btn-sm"><i class="bi bi-broadcast me-1"></i> WIP KAP 1</a>
+                <a href="<?= base_url('wip/kap2') ?>" class="btn btn-primary btn-sm"><i class="bi bi-broadcast-pin me-1"></i> WIP KAP 2</a>
                 <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
-                <a href="<?= base_url('akun') ?>" class="btn btn-outline-primary btn-sm"><i class="bi bi-people me-1"></i> Manage Akun</a>
+                <a href="<?= base_url('akun') ?>" class="btn btn-primary btn-sm"><i class="bi bi-people me-1"></i> Manage Akun</a>
                 <?php endif; ?>
             </div>
         </div>

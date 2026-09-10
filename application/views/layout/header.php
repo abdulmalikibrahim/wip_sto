@@ -12,7 +12,7 @@
 </head>
 <body>
 <nav class="navbar navbar-expand navbar-dark app-topbar px-3">
-    <button class="btn btn-sm btn-outline-secondary me-2 d-lg-none" id="btnToggleSidebar" type="button">
+    <button class="btn btn-sm btn-secondary me-2 d-lg-none" id="btnToggleSidebar" type="button">
         <i class="bi bi-list"></i>
     </button>
     <a class="navbar-brand fw-semibold" href="<?= base_url('dashboard') ?>">
@@ -21,7 +21,7 @@
     <div class="ms-auto d-flex align-items-center gap-3">
         <span class="text-secondary small d-none d-md-inline" id="liveClock"></span>
         <div class="dropdown">
-            <button class="btn btn-sm btn-outline-secondary dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown">
+            <button class="btn btn-sm btn-secondary dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown">
                 <i class="bi bi-person-circle"></i>
                 <span><?= html_escape($auth_user['full_name'] ?? 'User') ?></span>
             </button>

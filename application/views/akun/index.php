@@ -15,7 +15,6 @@
                         <th>No</th>
                         <th>Username</th>
                         <th>Full Name</th>
-                        <th>Email</th>
                         <th>Role</th>
                         <th>Status</th>
                         <th>Last Login</th>
@@ -45,10 +44,6 @@
                     <div class="mb-3">
                         <label class="form-label small">Full Name</label>
                         <input type="text" name="full_name" id="akun_full_name" class="form-control" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small">Email</label>
-                        <input type="email" name="email" id="akun_email" class="form-control">
                     </div>
                     <div class="mb-3">
                         <label class="form-label small">Password <span id="akun_password_hint" class="text-secondary"></span></label>

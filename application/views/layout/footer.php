@@ -12,7 +12,7 @@
 </script>
 <script src="<?= base_url('assets/js/app.js') ?>"></script>
 <?php if (!empty($page_js)): ?>
-<script src="<?= base_url($page_js) ?>"></script>
+<script src="<?= base_url($page_js) ?>?v=<?= @filemtime(FCPATH . $page_js) ?: time() ?>"></script>
 <?php endif; ?>
 </body>
 </html>
