@@ -7,7 +7,7 @@
         <div class="row g-3" id="cutoffStatus">
             <?php foreach ($shops as $key => $label): ?>
             <div class="col-sm-4">
-                <div class="stat-card" data-cutoff-shop="<?= $key ?>">
+                <div class="stat-card stat-card-filter" data-cutoff-shop="<?= $key ?>" title="Click to show only <?= html_escape($label) ?> data">
                     <div class="stat-icon"><i class="bi bi-signpost-2"></i></div>
                     <div>
                         <div class="stat-value fs-6" data-cutoff-summary>&mdash;</div>
@@ -17,6 +17,7 @@
             </div>
             <?php endforeach; ?>
         </div>
+        <div class="form-text mt-2 mb-0"><i class="bi bi-cursor"></i> Click a shop above to filter the list to just that shop; click it again (or the &times; below) to show all shops.</div>
     </div>
 </div>
 
@@ -49,6 +50,10 @@
     <div class="card-header">
         <i class="bi bi-table me-1"></i> WIP Calc List
         <span class="text-secondary small ms-1">— each shop's Cutoff VIN column shows the VIN used to work out that row's quantity (blank = totaled, no cutoff set yet)</span>
+        <span id="calcShopFilterBadge" class="badge bg-primary ms-2 d-none">
+            Showing: <span id="calcShopFilterName"></span>
+            <i class="bi bi-x-circle ms-1" id="btnClearShopFilter" role="button" title="Clear filter"></i>
+        </span>
     </div>
     <div class="card-body">
         <div class="table-responsive">
@@ -184,4 +189,5 @@
 <script>
     var WIP_CALC_SOURCE = <?= json_encode($source) ?>;
     var WIP_CALC_SHOPS = <?= json_encode($shops) ?>;
+    var WIP_CALC_SHOP_CODES = <?= json_encode($shop_codes) ?>;
 </script>

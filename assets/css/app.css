@@ -136,6 +136,12 @@ a { color: var(--app-accent); }
 .stat-card .stat-value { font-size: 1.5rem; font-weight: 700; line-height: 1; }
 .stat-card .stat-label { color: var(--app-text-muted); font-size: 0.82rem; }
 
+/* Stat cards that double as click-to-filter buttons (e.g. WIP Calc's
+   Welding/Toso/Assy cards) — same active/hover language as .model-card. */
+.stat-card-filter { cursor: pointer; user-select: none; transition: border-color .15s ease, background-color .15s ease; }
+.stat-card-filter:hover { border-color: var(--app-accent); }
+.stat-card-filter.active { border-color: var(--app-accent); background-color: rgba(79, 140, 255, 0.14); }
+
 /* ---------- BOM model filter cards ---------- */
 .model-card {
     background-color: var(--app-surface);

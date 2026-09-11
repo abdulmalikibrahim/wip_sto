@@ -81,10 +81,47 @@
     var $btnExportCalc = $('#btnExportCalc');
     var exportBaseHref = $btnExportCalc.attr('href');
 
-    $.fn.dataTable.ext.search.push(function (settings, searchData, index, rowData) {
-        if (settings.nTable.id !== 'tblWipCalc' || !hideZeroRows) return true;
+    // Shop card filter (Welding/Toso/Assy) — click a card in #cutoffStatus to
+    // show only the parts whose BOM Shop Code belongs to that shop; click the
+    // same card again (or the badge's clear icon) to go back to all shops.
+    var activeShopFilter = null;
 
-        return parseFloat(rowData.total) !== 0;
+    function rowMatchesShopFilter(rowData) {
+        if (!activeShopFilter) return true;
+        var code = (WIP_CALC_SHOP_CODES[activeShopFilter] || '').toUpperCase();
+        if (!code) return true;
+        var raw = (rowData.shop_code || '').toUpperCase();
+        return raw.indexOf(code) !== -1;
+    }
+
+    $.fn.dataTable.ext.search.push(function (settings, searchData, index, rowData) {
+        if (settings.nTable.id !== 'tblWipCalc') return true;
+        if (hideZeroRows && parseFloat(rowData.total) === 0) return false;
+        if (!rowMatchesShopFilter(rowData)) return false;
+        return true;
+    });
+
+    function setShopFilter(shop) {
+        activeShopFilter = (activeShopFilter === shop) ? null : shop;
+
+        $('#cutoffStatus [data-cutoff-shop]').removeClass('active');
+        if (activeShopFilter) {
+            $('#cutoffStatus [data-cutoff-shop="' + activeShopFilter + '"]').addClass('active');
+            $('#calcShopFilterName').text(WIP_CALC_SHOPS[activeShopFilter] || activeShopFilter);
+            $('#calcShopFilterBadge').removeClass('d-none');
+        } else {
+            $('#calcShopFilterBadge').addClass('d-none');
+        }
+        table.draw();
+    }
+
+    $('#cutoffStatus').on('click', '[data-cutoff-shop]', function () {
+        setShopFilter($(this).data('cutoff-shop'));
+    });
+
+    $('#btnClearShopFilter').on('click', function (e) {
+        e.stopPropagation();
+        setShopFilter(null);
     });
 
     function updateExportHref() {
