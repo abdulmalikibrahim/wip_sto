@@ -10,7 +10,7 @@
 <script>
     var BASE_URL = "<?= base_url() ?>";
 </script>
-<script src="<?= base_url('assets/js/app.js') ?>"></script>
+<script src="<?= base_url('assets/js/app.js') ?>?v=<?= @filemtime(FCPATH . 'assets/js/app.js') ?: time() ?>"></script>
 <?php if (!empty($page_js)): ?>
 <script src="<?= base_url($page_js) ?>?v=<?= @filemtime(FCPATH . $page_js) ?: time() ?>"></script>
 <?php endif; ?>

@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="<?= base_url('assets/vendor/css/bootstrap-icons.min.css') ?>">
     <link rel="stylesheet" href="<?= base_url('assets/vendor/css/dataTables.bootstrap5.min.css') ?>">
     <link rel="stylesheet" href="<?= base_url('assets/vendor/css/responsive.bootstrap5.min.css') ?>">
-    <link rel="stylesheet" href="<?= base_url('assets/css/app.css') ?>">
+    <link rel="stylesheet" href="<?= base_url('assets/css/app.css') ?>?v=<?= @filemtime(FCPATH . 'assets/css/app.css') ?: time() ?>">
 </head>
 <body>
 <nav class="navbar navbar-expand navbar-dark app-topbar px-3">
