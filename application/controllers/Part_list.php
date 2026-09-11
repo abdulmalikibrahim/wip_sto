@@ -1,30 +1,31 @@
 <?php
 defined('BASEPATH') OR exit('No direct script access allowed');
 
-class Bom extends MY_Controller
+class Part_list extends MY_Controller
 {
     public function __construct()
     {
         parent::__construct();
-        $this->load->model('Bom_model');
+        $this->load->model('Part_list_model');
     }
 
     public function index()
     {
-        $data['title'] = 'Master BOM';
-        $data['total_bom'] = $this->Bom_model->count_all();
-        $data['model_summary'] = $this->Bom_model->model_summary();
-        $data['page_js'] = 'assets/js/bom.js';
-        $this->render('bom/index', $data, 'bom');
+        $data['title'] = 'Part List';
+        $data['total_part_list'] = $this->Part_list_model->count_all();
+        $data['model_summary'] = $this->Part_list_model->model_summary();
+        $data['compare_summary'] = $this->Part_list_model->compare_summary();
+        $data['page_js'] = 'assets/js/part_list.js';
+        $this->render('part_list/index', $data, 'part_list');
     }
 
     /**
-     * DataTables server-side source.
+     * DataTables server-side source for the Part List's own data table.
      */
     public function data()
     {
         $request = $this->input->post() ?: $this->input->get();
-        $result = $this->Bom_model->datatable($request);
+        $result = $this->Part_list_model->datatable($request);
 
         $rows = array();
         $start = (int) ($request['start'] ?? 0);
@@ -56,20 +57,60 @@ class Bom extends MY_Controller
     }
 
     /**
-     * Download the Excel upload template.
+     * DataTables server-side source for the Master BOM vs Part List diff table.
      */
-    public function template()
+    public function compare_data()
     {
-        $this->Bom_model->download_template();
+        $request = $this->input->post() ?: $this->input->get();
+        $result = $this->Part_list_model->compare_datatable($request);
+
+        $status_labels = array(
+            'only_bom'       => 'Only in Master BOM',
+            'only_part_list' => 'Only in Part List',
+            'mismatch'       => 'Different',
+        );
+
+        $rows = array();
+        $start = (int) ($request['start'] ?? 0);
+        foreach ($result['data'] as $i => $d) {
+            $rows[] = array(
+                'no'               => $start + $i + 1,
+                'status'           => $d['status'],
+                'status_label'     => $status_labels[$d['status']] ?? $d['status'],
+                'model'            => $d['model'],
+                'suffix'           => $d['suffix'],
+                'component'        => $d['component'],
+                'part_number'      => $d['part_number'],
+                'field'            => $d['field'],
+                'bom_value'        => $d['bom_value'],
+                'part_list_value'  => $d['part_list_value'],
+            );
+        }
+
+        $this->output
+            ->set_content_type('application/json')
+            ->set_output(json_encode(array(
+                'draw'            => (int) ($request['draw'] ?? 1),
+                'recordsTotal'    => $result['total'],
+                'recordsFiltered' => $result['filtered'],
+                'data'            => $rows,
+            )));
     }
 
     /**
-     * Download the actual BOM data currently in the table (optionally
-     * narrowed to the Model card selected on the page).
+     * Download the Excel upload template (same layout as Master BOM's).
+     */
+    public function template()
+    {
+        $this->Part_list_model->download_template();
+    }
+
+    /**
+     * Download the actual Part List data currently in the table.
      */
     public function export()
     {
-        $this->Bom_model->export_data($this->input->get('model_filter'));
+        $this->Part_list_model->export_data($this->input->get('model_filter'));
     }
 
     /**
@@ -79,31 +120,31 @@ class Bom extends MY_Controller
     {
         $this->require_admin();
 
-        if (empty($_FILES['bom_file']['name'])) {
+        if (empty($_FILES['part_list_file']['name'])) {
             set_flash('error', 'Please choose an Excel file to upload.');
-            redirect('bom');
+            redirect('part-list');
         }
 
         $config['upload_path']   = sys_get_temp_dir();
         $config['allowed_types'] = 'xlsx';
         $config['max_size']      = 20480; // 20MB
-        $config['file_name']     = 'bom_upload_' . time() . '_' . uniqid();
+        $config['file_name']     = 'part_list_upload_' . time() . '_' . uniqid();
 
         $this->load->library('upload', $config);
 
-        if (!$this->upload->do_upload('bom_file')) {
+        if (!$this->upload->do_upload('part_list_file')) {
             set_flash('error', 'Upload failed: ' . strip_tags($this->upload->display_errors()));
-            redirect('bom');
+            redirect('part-list');
         }
 
         $uploaded = $this->upload->data();
         $mode = $this->input->post('mode') === 'replace' ? 'replace' : 'append';
 
-        $parsed = $this->Bom_model->parse_excel($uploaded['full_path']);
+        $parsed = $this->Part_list_model->parse_excel($uploaded['full_path']);
 
         if (!$parsed['ok']) {
             @unlink($uploaded['full_path']);
-            $this->Bom_model->log_upload(array(
+            $this->Part_list_model->log_upload(array(
                 'file_name' => $uploaded['client_name'],
                 'mode'      => $mode,
                 'status'    => 'failed',
@@ -111,17 +152,17 @@ class Bom extends MY_Controller
                 'user_id'   => $this->auth_user['id'],
             ));
             set_flash('error', $parsed['message']);
-            redirect('bom');
+            redirect('part-list');
         }
 
         if ($mode === 'replace') {
-            $this->Bom_model->truncate();
+            $this->Part_list_model->truncate();
         }
 
-        $result = $this->Bom_model->insert_rows($parsed['rows']);
+        $result = $this->Part_list_model->insert_rows($parsed['rows']);
         @unlink($uploaded['full_path']);
 
-        $this->Bom_model->log_upload(array(
+        $this->Part_list_model->log_upload(array(
             'file_name'     => $uploaded['client_name'],
             'mode'          => $mode,
             'total_rows'    => count($parsed['rows']),
@@ -132,8 +173,8 @@ class Bom extends MY_Controller
             'user_id'       => $this->auth_user['id'],
         ));
 
-        set_flash('success', "BOM uploaded: {$result['inserted']} rows inserted, {$result['skipped']} skipped.");
-        redirect('bom');
+        set_flash('success', "Part List uploaded: {$result['inserted']} rows inserted, {$result['skipped']} skipped.");
+        redirect('part-list');
     }
 
     public function delete($id)
@@ -141,7 +182,7 @@ class Bom extends MY_Controller
         $this->require_admin();
 
         if ($this->input->is_ajax_request()) {
-            $ok = $this->Bom_model->delete($id);
+            $ok = $this->Part_list_model->delete($id);
             $this->output->set_content_type('application/json')->set_output(json_encode(array(
                 'status' => $ok ? 'success' : 'error',
             )));
@@ -149,8 +190,8 @@ class Bom extends MY_Controller
             return;
         }
 
-        $this->Bom_model->delete($id);
-        set_flash('success', 'BOM entry deleted.');
-        redirect('bom');
+        $this->Part_list_model->delete($id);
+        set_flash('success', 'Part List entry deleted.');
+        redirect('part-list');
     }
 }

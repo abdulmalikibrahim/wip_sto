@@ -1,6 +1,9 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
     <h1 class="page-title mb-0">Master BOM</h1>
     <div class="d-flex gap-2">
+        <a href="<?= base_url('bom/export') ?>" class="btn btn-success btn-sm" id="btnDownloadBom">
+            <i class="bi bi-file-earmark-arrow-down me-1"></i> Download
+        </a>
         <a href="<?= base_url('bom/template') ?>" class="btn btn-secondary btn-sm">
             <i class="bi bi-download me-1"></i> Download Template
         </a>

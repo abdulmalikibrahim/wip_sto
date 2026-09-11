@@ -56,4 +56,47 @@
             color: '#e4e6eb'
         });
     };
+
+    /**
+     * Turn a plain "download .xlsx" button/link into an AJAX-backed download
+     * that shows a spinner for as long as the file is being generated and
+     * transferred. A plain <a href> download gives no feedback at all since
+     * the page never navigates away while the browser fetches it — this
+     * fetches the file itself so we know exactly when it starts and ends.
+     */
+    window.downloadExcel = function ($btn) {
+        if ($btn.hasClass('is-downloading')) return; // ignore repeat clicks mid-download
+
+        var url = $btn.attr('href');
+        var originalHtml = $btn.html();
+
+        $btn.addClass('is-downloading disabled').attr('aria-disabled', 'true');
+        $btn.html('<span class="spinner-border spinner-border-sm me-1" role="status"></span>Downloading...');
+
+        fetch(url, { credentials: 'same-origin' })
+            .then(function (resp) {
+                if (!resp.ok) throw new Error('Download failed');
+                var disposition = resp.headers.get('Content-Disposition') || '';
+                var match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+                var filename = match ? decodeURIComponent(match[1]) : 'download.xlsx';
+                return resp.blob().then(function (blob) { return { blob: blob, filename: filename }; });
+            })
+            .then(function (result) {
+                var blobUrl = window.URL.createObjectURL(result.blob);
+                var a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = result.filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(function () { window.URL.revokeObjectURL(blobUrl); }, 1000);
+            })
+            .catch(function () {
+                toast('error', 'Download failed. Please try again.');
+            })
+            .finally(function () {
+                $btn.removeClass('is-downloading disabled').removeAttr('aria-disabled');
+                $btn.html(originalHtml);
+            });
+    };
 })(jQuery);

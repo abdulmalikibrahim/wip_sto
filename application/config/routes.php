@@ -61,8 +61,18 @@ $route['logout'] = 'auth/logout';
 $route['bom'] = 'bom/index';
 $route['bom/data'] = 'bom/data';
 $route['bom/template'] = 'bom/template';
+$route['bom/export'] = 'bom/export';
 $route['bom/upload'] = 'bom/upload';
 $route['bom/delete/(:num)'] = 'bom/delete/$1';
+
+// Part List (compared against Master BOM)
+$route['part-list'] = 'part_list/index';
+$route['part-list/data'] = 'part_list/data';
+$route['part-list/compare/data'] = 'part_list/compare_data';
+$route['part-list/template'] = 'part_list/template';
+$route['part-list/export'] = 'part_list/export';
+$route['part-list/upload'] = 'part_list/upload';
+$route['part-list/delete/(:num)'] = 'part_list/delete/$1';
 
 // Master WIP
 $route['wip/kap1'] = 'wip/kap1';

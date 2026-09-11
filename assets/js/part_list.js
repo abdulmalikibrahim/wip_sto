@@ -1,7 +1,7 @@
 (function ($) {
     'use strict';
 
-    var isAdmin = $('#tblBom thead th').last().text().trim() === 'Action';
+    var isAdmin = $('#tblPartList thead th').last().text().trim() === 'Action';
 
     var columns = [
         { data: 'no', orderable: false, searchable: false },
@@ -23,7 +23,7 @@
             orderable: false,
             searchable: false,
             render: function (row) {
-                return '<button class="btn btn-sm btn-danger btn-delete-bom" data-id="' + row.id + '" title="Delete">' +
+                return '<button class="btn btn-sm btn-danger btn-delete-part-list" data-id="' + row.id + '" title="Delete">' +
                     '<i class="bi bi-trash"></i></button>';
             }
         });
@@ -31,11 +31,11 @@
 
     var currentModelFilter = '';
 
-    var table = $('#tblBom').DataTable($.extend({}, window.APP_DT_DEFAULTS, {
+    var table = $('#tblPartList').DataTable($.extend({}, window.APP_DT_DEFAULTS, {
         processing: true,
         serverSide: true,
         ajax: {
-            url: BASE_URL + 'bom/data',
+            url: BASE_URL + 'part-list/data',
             type: 'POST',
             data: function (d) {
                 d.model_filter = currentModelFilter;
@@ -56,26 +56,25 @@
         updateDownloadLink();
     });
 
-    // Keep the "Download" button in sync with whichever Model card is active,
-    // so it exports the same data currently shown in the table.
+    // Keep the "Download" button in sync with whichever Model card is active.
     function updateDownloadLink() {
-        var $btn = $('#btnDownloadBom');
+        var $btn = $('#btnDownloadPartList');
         if (!$btn.length) return;
-        var base = BASE_URL + 'bom/export';
+        var base = BASE_URL + 'part-list/export';
         $btn.attr('href', currentModelFilter ? base + '?model_filter=' + encodeURIComponent(currentModelFilter) : base);
     }
 
     // Show a loading spinner on the Download button while the file is
     // generated/transferred, instead of giving no feedback at all.
-    $('#btnDownloadBom').on('click', function (e) {
+    $('#btnDownloadPartList').on('click', function (e) {
         e.preventDefault();
         downloadExcel($(this));
     });
 
-    $('#tblBom').on('click', '.btn-delete-bom', function () {
+    $('#tblPartList').on('click', '.btn-delete-part-list', function () {
         var id = $(this).data('id');
         Swal.fire({
-            title: 'Delete this BOM entry?',
+            title: 'Delete this Part List entry?',
             icon: 'warning',
             showCancelButton: true,
             confirmButtonText: 'Delete',
@@ -84,7 +83,7 @@
             color: '#e4e6eb'
         }).then(function (res) {
             if (!res.isConfirmed) return;
-            $.post(BASE_URL + 'bom/delete/' + id, function (resp) {
+            $.post(BASE_URL + 'part-list/delete/' + id, function (resp) {
                 if (resp.status === 'success') {
                     toast('success', 'Entry deleted');
                     table.ajax.reload(null, false);
@@ -103,11 +102,11 @@
         $uploadForm.find('button[type="submit"]').html(
             '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Uploading...'
         );
-        $('#bomUploadOverlay').removeClass('d-none');
+        $('#partListUploadOverlay').removeClass('d-none');
     });
 
     // Upload dropzone UX
-    var $file = $('#bom_file');
+    var $file = $('#part_list_file');
     var $dz = $('#dropzone');
     $file.on('change', function () {
         var name = this.files.length ? this.files[0].name : null;
@@ -126,5 +125,55 @@
             $file[0].files = files;
             $file.trigger('change');
         }
+    });
+
+    // ------------------------------------------------------------------
+    // Compare: Master BOM vs Part List
+    // ------------------------------------------------------------------
+
+    var currentStatusFilter = '';
+
+    var statusBadges = {
+        only_bom: '<span class="badge text-bg-danger">Only in Master BOM</span>',
+        only_part_list: '<span class="badge text-bg-warning text-dark">Only in Part List</span>',
+        mismatch: '<span class="badge text-bg-info text-dark">Different</span>'
+    };
+
+    var compareTable = $('#tblCompare').DataTable($.extend({}, window.APP_DT_DEFAULTS, {
+        processing: true,
+        serverSide: true,
+        ordering: false,
+        ajax: {
+            url: BASE_URL + 'part-list/compare/data',
+            type: 'POST',
+            data: function (d) {
+                d.status_filter = currentStatusFilter;
+            }
+        },
+        columns: [
+            { data: 'no', orderable: false, searchable: false },
+            {
+                data: 'status',
+                orderable: false,
+                render: function (status, type, row) {
+                    return type === 'display' ? (statusBadges[status] || row.status_label) : row.status_label;
+                }
+            },
+            { data: 'model' },
+            { data: 'suffix' },
+            { data: 'component' },
+            { data: 'part_number' },
+            { data: 'field' },
+            { data: 'bom_value' },
+            { data: 'part_list_value' },
+        ]
+    }));
+
+    $('#statusFilter').on('click', 'button', function () {
+        var $btn = $(this);
+        currentStatusFilter = $btn.data('status') || '';
+        $('#statusFilter button').removeClass('active');
+        $btn.addClass('active');
+        compareTable.ajax.reload();
     });
 })(jQuery);

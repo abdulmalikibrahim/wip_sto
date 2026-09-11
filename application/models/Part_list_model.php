@@ -8,13 +8,28 @@ use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx as XlsxWriter;
 
-class Bom_model extends CI_Model
+/**
+ * Part List: a second BOM-shaped table (same 9-column upload template as
+ * Master BOM) whose whole purpose is to be checked against `bom` for
+ * mismatches — see compare()/compare_summary() below.
+ */
+class Part_list_model extends CI_Model
 {
-    protected $table = 'bom';
+    protected $table = 'part_list';
 
-    /** Required header columns of the upload/template Excel file, in order. */
+    /** Required header columns of the upload/template Excel file, in order. Same as Master BOM. */
     public $required_headers = array(
         'Material', 'Katashiki', 'Model', 'Suffix', 'Component', 'Material Description', 'Qty', 'Uom', 'Shop Code',
+    );
+
+    /** Fields compared row-for-row once two sides share the same Model+Suffix+Part Number key. */
+    protected $compare_fields = array(
+        'material'             => 'Material',
+        'katashiki'            => 'Katashiki',
+        'qty'                  => 'Qty',
+        'uom'                  => 'Uom',
+        'shop_code'            => 'Shop Code',
+        'material_description' => 'Material Description',
     );
 
     public function __construct()
@@ -31,8 +46,6 @@ class Bom_model extends CI_Model
 
         $this->db->from($this->table);
 
-        // Hard filter from the clickable Model cards on the BOM page (not the
-        // free-text search box) — combined with it via AND, not replacing it.
         $model_filter = trim((string) ($request['model_filter'] ?? ''));
         if ($model_filter !== '') {
             $this->db->where('model', $model_filter);
@@ -96,15 +109,13 @@ class Bom_model extends CI_Model
 
     /**
      * Part count per Model, for the clickable "filter by model" cards on
-     * the Master BOM page. Rows with no Model set are left out of the
-     * cards (they'd have nothing to click on) but are still counted in
-     * the overall "Total BOM Records" stat.
+     * the Part List page.
      */
     public function model_summary()
     {
         return $this->db->select('model, COUNT(*) AS total')
             ->from($this->table)
-            ->where('model !=', null) // CI3 idiom: value NULL + "!=" operator on the key -> "model IS NOT NULL"
+            ->where('model !=', null)
             ->where('model !=', '')
             ->group_by('model')
             ->order_by('model', 'asc')
@@ -112,13 +123,14 @@ class Bom_model extends CI_Model
     }
 
     /**
-     * Stream the upload template (single sheet, 9 required columns) straight to the browser.
+     * Stream the upload template. Identical layout to Master BOM's template
+     * (same required columns) so the same source file can be reused.
      */
     public function download_template()
     {
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('BOM');
+        $sheet->setTitle('Part List');
 
         $sheet->fromArray($this->required_headers, null, 'A1');
         $sheet->getStyle('A1:I1')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
@@ -126,14 +138,8 @@ class Bom_model extends CI_Model
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('1F6FEB');
 
-        // Material holds long numeric codes (e.g. 11103102000000); format the whole
-        // column as text so Excel never collapses it into scientific notation.
-        // (Must be the full "A1:A1048576" column range so PhpSpreadsheet takes the
-        // column-style fast path instead of materializing a million cell objects.)
         $sheet->getStyle('A1:A1048576')->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
 
-        // A couple of example rows to guide the user (matching the real BOM format).
-        // Shop Code accepts more than one shop, comma-separated (e.g. "WELD3,ASSY3,TOSO3").
         $examples = array(
             array('11103102000000', 'A251LA-GMXF', 'D26A', 'MN', '09101-BZ030-00', 'TOOL SET, STD L/JACK', 1, 'PC', 'WELD3,ASSY3,TOSO3'),
             array('11103102000000', 'A251LA-GMXF', 'D74A', 'MN', '11293-BZ840-00', 'LABEL, TUNE-UP SPECIFICATION INFORMATION', 1, 'PC', 'WELD3,ASSY3'),
@@ -141,7 +147,6 @@ class Bom_model extends CI_Model
 
         $row = 2;
         foreach ($examples as $example) {
-            // Written explicitly as a string so it stays full-width text, not scientific notation.
             $sheet->setCellValueExplicit("A{$row}", $example[0], DataType::TYPE_STRING);
             $sheet->fromArray(array_slice($example, 1), null, "B{$row}");
             $row++;
@@ -152,7 +157,7 @@ class Bom_model extends CI_Model
         }
 
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        header('Content-Disposition: attachment; filename="template_upload_bom.xlsx"');
+        header('Content-Disposition: attachment; filename="template_upload_part_list.xlsx"');
         header('Cache-Control: max-age=0');
 
         $writer = new XlsxWriter($spreadsheet);
@@ -160,9 +165,8 @@ class Bom_model extends CI_Model
     }
 
     /**
-     * Stream every BOM record (optionally narrowed to one Model) as an
-     * .xlsx download — the "Download" button, as opposed to the blank
-     * upload template from download_template().
+     * Stream every Part List record (optionally narrowed to one Model) as
+     * an .xlsx download.
      */
     public function export_data($model_filter = '')
     {
@@ -181,7 +185,7 @@ class Bom_model extends CI_Model
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('BOM');
+        $sheet->setTitle('Part List');
 
         $headers = array('No', 'Material', 'Katashiki', 'Model', 'Suffix', 'Component', 'Part Number', 'Material Description', 'Qty', 'Uom', 'Shop Code');
         $sheet->fromArray($headers, null, 'A1');
@@ -190,7 +194,6 @@ class Bom_model extends CI_Model
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('1F6FEB');
 
-        // Material/Component/Part Number hold long numeric-looking codes; keep them as text.
         foreach (array('A', 'F', 'G') as $col) {
             $sheet->getStyle("{$col}1:{$col}1048576")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
         }
@@ -215,7 +218,7 @@ class Bom_model extends CI_Model
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
-        $filename = 'bom_data_' . date('Ymd_His') . '.xlsx';
+        $filename = 'part_list_data_' . date('Ymd_His') . '.xlsx';
 
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -226,7 +229,8 @@ class Bom_model extends CI_Model
     }
 
     /**
-     * Parse an uploaded Excel file and validate its header row.
+     * Parse an uploaded Excel file and validate its header row. Identical
+     * rules to Master BOM's upload.
      *
      * @return array{ok:bool, message:string, rows?:array}
      */
@@ -278,8 +282,6 @@ class Bom_model extends CI_Model
                     'material_description' => trim((string) ($cells[5] ?? '')),
                     'qty'                  => is_numeric($cells[6] ?? null) ? (float) $cells[6] : 0,
                     'uom'                  => trim((string) ($cells[7] ?? '')),
-                    // Shop Code may list more than one shop, comma-separated
-                    // (e.g. "WELD3,ASSY3,TOSO3"); normalize away stray spaces.
                     'shop_code'            => $this->normalize_shop_code($cells[8] ?? ''),
                 );
             }
@@ -345,7 +347,7 @@ class Bom_model extends CI_Model
     public function log_upload($data)
     {
         $data['created_at'] = date('Y-m-d H:i:s');
-        $this->db->insert('bom_upload_log', $data);
+        $this->db->insert('part_list_upload_log', $data);
     }
 
     protected function header_matches(array $cells)
@@ -371,12 +373,6 @@ class Bom_model extends CI_Model
         return true;
     }
 
-    /**
-     * Collapse a Shop Code cell like "WELD3, ASSY3 ,TOSO3" down to
-     * "WELD3,ASSY3,TOSO3" — trims each comma-separated item and drops empty
-     * ones, so downstream matching (e.g. WIP Calc's FIND_IN_SET lookups)
-     * can rely on a plain, space-free comma list.
-     */
     protected function normalize_shop_code($raw)
     {
         $parts = array_filter(array_map('trim', explode(',', (string) $raw)), function ($p) {
@@ -384,5 +380,191 @@ class Bom_model extends CI_Model
         });
 
         return implode(',', $parts);
+    }
+
+    // ------------------------------------------------------------------
+    // Master BOM <-> Part List comparison
+    // ------------------------------------------------------------------
+
+    /**
+     * Build the full list of differences between `bom` and `part_list`,
+     * keyed by Model + Suffix + Part Number. Every row is one concrete
+     * difference: a part only present on one side, or one field that
+     * disagrees between the two sides for a part present on both.
+     *
+     * @return array list of rows: status, model, suffix, component, part_number, field, bom_value, part_list_value
+     */
+    public function build_diff()
+    {
+        $cols = 'model, katashiki, material, suffix, component, part_number, material_description, qty, uom, shop_code';
+
+        $bom_rows = $this->db->select($cols)->from('bom')->get()->result_array();
+        $part_list_rows = $this->db->select($cols)->from($this->table)->get()->result_array();
+
+        $bom_by_key = array();
+        foreach ($bom_rows as $row) {
+            $bom_by_key[$this->diff_key($row)] = $row;
+        }
+
+        $part_list_by_key = array();
+        foreach ($part_list_rows as $row) {
+            $part_list_by_key[$this->diff_key($row)] = $row;
+        }
+
+        $diffs = array();
+
+        foreach ($bom_by_key as $key => $bom_row) {
+            if (!isset($part_list_by_key[$key])) {
+                $diffs[] = $this->diff_row('only_bom', $bom_row, null, '(New Part)', $this->summarize_row($bom_row), '-');
+                continue;
+            }
+
+            $part_list_row = $part_list_by_key[$key];
+            foreach ($this->compare_fields as $field => $label) {
+                $bom_value = $this->diff_field_value($field, $bom_row[$field]);
+                $part_list_value = $this->diff_field_value($field, $part_list_row[$field]);
+                if ($bom_value !== $part_list_value) {
+                    $diffs[] = $this->diff_row('mismatch', $bom_row, $part_list_row, $label, $bom_value, $part_list_value);
+                }
+            }
+        }
+
+        foreach ($part_list_by_key as $key => $part_list_row) {
+            if (!isset($bom_by_key[$key])) {
+                $diffs[] = $this->diff_row('only_part_list', null, $part_list_row, '(New Part)', '-', $this->summarize_row($part_list_row));
+            }
+        }
+
+        usort($diffs, function ($a, $b) {
+            foreach (array('model', 'suffix', 'part_number', 'field') as $key) {
+                $cmp = strcmp((string) $a[$key], (string) $b[$key]);
+                if ($cmp !== 0) {
+                    return $cmp;
+                }
+            }
+
+            return 0;
+        });
+
+        return $diffs;
+    }
+
+    /**
+     * Summary counts for the stat cards: how many parts only exist in
+     * Master BOM, only in Part List, have mismatched fields, or match
+     * exactly on both sides.
+     */
+    public function compare_summary()
+    {
+        $diffs = $this->build_diff();
+
+        $summary = array('only_bom' => 0, 'only_part_list' => 0, 'mismatch_parts' => 0, 'matching' => 0);
+        $mismatched_keys = array();
+
+        foreach ($diffs as $d) {
+            if ($d['status'] === 'only_bom') {
+                $summary['only_bom']++;
+            } elseif ($d['status'] === 'only_part_list') {
+                $summary['only_part_list']++;
+            } else {
+                $mismatched_keys[$d['model'] . '|' . $d['suffix'] . '|' . $d['part_number']] = true;
+            }
+        }
+        $summary['mismatch_parts'] = count($mismatched_keys);
+
+        $bom_total = $this->db->count_all('bom');
+        $part_list_total = $this->count_all();
+        $summary['bom_total'] = $bom_total;
+        $summary['part_list_total'] = $part_list_total;
+        $summary['matching'] = max(0, $part_list_total - $summary['only_part_list'] - $summary['mismatch_parts']);
+
+        return $summary;
+    }
+
+    /**
+     * Paginate/search/filter the diff list, DataTables-server-side style.
+     */
+    public function compare_datatable($request)
+    {
+        $diffs = $this->build_diff();
+
+        $status_filter = trim((string) ($request['status_filter'] ?? ''));
+        if ($status_filter !== '') {
+            $diffs = array_values(array_filter($diffs, function ($d) use ($status_filter) {
+                return $d['status'] === $status_filter;
+            }));
+        }
+
+        $model_filter = trim((string) ($request['model_filter'] ?? ''));
+        if ($model_filter !== '') {
+            $diffs = array_values(array_filter($diffs, function ($d) use ($model_filter) {
+                return $d['model'] === $model_filter;
+            }));
+        }
+
+        $total = count($diffs);
+
+        $search = trim((string) ($request['search']['value'] ?? ''));
+        if ($search !== '') {
+            $needle = mb_strtolower($search);
+            $diffs = array_values(array_filter($diffs, function ($d) use ($needle) {
+                $haystack = mb_strtolower(implode(' ', array(
+                    $d['model'], $d['suffix'], $d['component'], $d['part_number'],
+                    $d['field'], $d['bom_value'], $d['part_list_value'],
+                )));
+
+                return mb_strpos($haystack, $needle) !== false;
+            }));
+        }
+
+        $filtered = count($diffs);
+
+        $start = (int) ($request['start'] ?? 0);
+        $length = (int) ($request['length'] ?? -1);
+        $page = $length === -1 ? $diffs : array_slice($diffs, $start, $length);
+
+        return array('data' => $page, 'filtered' => $filtered, 'total' => $total);
+    }
+
+    protected function diff_key(array $row)
+    {
+        return $row['model'] . '|' . $row['suffix'] . '|' . $row['part_number'];
+    }
+
+    protected function diff_field_value($field, $value)
+    {
+        if ($field === 'qty') {
+            return rtrim(rtrim(number_format((float) $value, 3, '.', ''), '0'), '.');
+        }
+
+        return trim((string) $value);
+    }
+
+    protected function summarize_row(array $row)
+    {
+        return sprintf(
+            'Material: %s | Katashiki: %s | Qty: %s | Uom: %s | Shop Code: %s',
+            $row['material'],
+            $row['katashiki'],
+            $this->diff_field_value('qty', $row['qty']),
+            $row['uom'],
+            $row['shop_code']
+        );
+    }
+
+    protected function diff_row($status, $bom_row, $part_list_row, $field, $bom_value, $part_list_value)
+    {
+        $source = $bom_row ?: $part_list_row;
+
+        return array(
+            'status'           => $status,
+            'model'            => $source['model'],
+            'suffix'           => $source['suffix'],
+            'component'        => $source['component'],
+            'part_number'      => $source['part_number'],
+            'field'            => $field,
+            'bom_value'        => $bom_value,
+            'part_list_value'  => $part_list_value,
+        );
     }
 }

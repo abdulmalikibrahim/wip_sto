@@ -9,6 +9,9 @@ $is_admin = ($auth_user['role'] ?? '') === 'admin';
         <a class="nav-link <?= $active_menu === 'bom' ? 'active' : '' ?>" href="<?= base_url('bom') ?>">
             <i class="bi bi-list-columns-reverse"></i> Master BOM
         </a>
+        <a class="nav-link <?= $active_menu === 'part_list' ? 'active' : '' ?>" href="<?= base_url('part-list') ?>">
+            <i class="bi bi-ui-checks-grid"></i> Part List
+        </a>
 
         <div class="nav-section-label">Master WIP</div>
         <a class="nav-link ps-4 <?= $active_menu === 'wip_kap1' ? 'active' : '' ?>" href="<?= base_url('wip/kap1') ?>">
