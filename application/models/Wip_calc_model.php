@@ -1430,11 +1430,20 @@ class Wip_calc_model extends CI_Model
     }
 
     /**
-     * Stream the cutoff upload template (Part Number, VIN, Shop) straight to the browser.
+     * Stream the cutoff upload template (Part Number, VIN, Shop) straight to
+     * the browser. With no $shop, this is the old generic template — one
+     * blank example row per shop code. With a $shop (weld|toso|assy), it's
+     * pre-filled instead: one row per part_number the BOM already lists
+     * under that shop, Shop Code filled in, VIN left blank — so the user
+     * only has to type in the VIN column and re-upload.
      */
-    public function download_template($source)
+    public function download_template($source, $shop = '')
     {
         $shop_codes = $this->config->item('wip_calc_shop_codes')[$source] ?? array();
+        $shop = trim((string) $shop);
+        if ($shop !== '' && !isset($shop_codes[$shop])) {
+            show_error('Unknown Shop for this KAP line.', 400);
+        }
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -1446,18 +1455,28 @@ class Wip_calc_model extends CI_Model
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('1F6FEB');
 
-        // One example row per shop code, to show the expected format.
         $r = 2;
-        foreach ($shop_codes as $shop_code) {
-            $sheet->fromArray(array('', '', strtoupper($shop_code)), null, "A{$r}");
-            $r++;
+        if ($shop !== '') {
+            $shop_code = $shop_codes[$shop];
+            $part_numbers = $this->bom_part_numbers_for_shop($shop_code);
+            sort($part_numbers, SORT_NATURAL | SORT_FLAG_CASE);
+            foreach ($part_numbers as $part_number) {
+                $sheet->fromArray(array($part_number, '', strtoupper($shop_code)), null, "A{$r}");
+                $r++;
+            }
+            $filename = 'template_upload_wip_calc_cutoff_' . $source . '_' . $shop . '.xlsx';
+        } else {
+            // One example row per shop code, to show the expected format.
+            foreach ($shop_codes as $shop_code) {
+                $sheet->fromArray(array('', '', strtoupper($shop_code)), null, "A{$r}");
+                $r++;
+            }
+            $filename = 'template_upload_wip_calc_cutoff_' . $source . '.xlsx';
         }
 
         foreach (range('A', 'C') as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
-
-        $filename = 'template_upload_wip_calc_cutoff_' . $source . '.xlsx';
 
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -1493,6 +1512,7 @@ class Wip_calc_model extends CI_Model
 
         $rows = array();
         $skipped = 0;
+        $formula_cells = 0;
         $header_checked = false;
 
         foreach ($spreadsheet->getWorksheetIterator() as $worksheet) {
@@ -1526,6 +1546,18 @@ class Wip_calc_model extends CI_Model
                 $shopRaw = trim((string) ($cells[2] ?? ''));
                 $resolved = $this->resolve_shop_code($shopRaw);
 
+                // A cell can come back as its literal formula text (e.g.
+                // "=VLOOKUP(...)") instead of a value — happens when the
+                // formula references another, unopened workbook (the
+                // "[1]SheetName" style ref) so Excel never cached a result
+                // for it. Flagged separately from a blank/unresolved cell
+                // so the upload result actually says what's wrong, instead
+                // of a confusing wall of "VIN not found in WIP data".
+                if ($vin !== '' && $vin[0] === '=') {
+                    $formula_cells++;
+                    continue;
+                }
+
                 if ($part_number === '' || $vin === '' || $resolved === null) {
                     $skipped++;
                     continue;
@@ -1547,11 +1579,17 @@ class Wip_calc_model extends CI_Model
             return array('ok' => false, 'message' => 'The uploaded file is empty.');
         }
 
-        if (empty($rows) && $skipped === 0) {
+        if (empty($rows) && $skipped === 0 && $formula_cells === 0) {
             return array('ok' => false, 'message' => 'No data rows found in the uploaded file.');
         }
 
-        return array('ok' => true, 'message' => 'ok', 'rows' => $rows, 'skipped' => $skipped);
+        return array(
+            'ok'            => true,
+            'message'       => 'ok',
+            'rows'          => $rows,
+            'skipped'       => $skipped,
+            'formula_cells' => $formula_cells,
+        );
     }
 
     protected function header_matches(array $cells)

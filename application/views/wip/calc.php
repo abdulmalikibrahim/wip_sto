@@ -36,9 +36,26 @@
     <a href="<?= base_url($source . '/calc/export') ?>" class="btn btn-sm btn-success" id="btnExportCalc">
         <i class="bi bi-file-earmark-excel"></i> Download Excel
     </a>
-    <a href="<?= base_url($source . '/calc/template') ?>" class="btn btn-sm btn-secondary">
-        <i class="bi bi-download"></i> Download Cutoff Template
-    </a>
+    <div class="dropdown">
+        <button type="button" class="btn btn-sm btn-secondary dropdown-toggle" data-bs-toggle="dropdown">
+            <i class="bi bi-download"></i> Download Cutoff Template
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+            <?php foreach ($shops as $key => $label): ?>
+            <li>
+                <a class="dropdown-item" href="<?= base_url($source . '/calc/template?shop=' . $key) ?>">
+                    <?= html_escape($label) ?> (<?= html_escape($shop_codes[$key] ?? '') ?>)
+                </a>
+            </li>
+            <?php endforeach; ?>
+            <li><hr class="dropdown-divider"></li>
+            <li>
+                <a class="dropdown-item small text-secondary" href="<?= base_url($source . '/calc/template') ?>">
+                    Blank template (all shops, no parts filled in)
+                </a>
+            </li>
+        </ul>
+    </div>
     <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
     <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#modalSetCutoff">
         <i class="bi bi-plus-circle"></i> Add Cutoff VIN
@@ -125,13 +142,21 @@
                 </div>
                 <div class="modal-body">
                     <p class="small text-secondary">
-                        File must use the <a href="<?= base_url($source . '/calc/template') ?>">standard template</a>:
-                        <strong>Part Number, VIN, Shop</strong>. One row per part number — each part is installed at a
-                        different point along the line, so each one needs its own cutoff VIN. The VIN must already
-                        exist in the cached <a href="<?= base_url($source) ?>">Master WIP</a> data for that Shop
+                        File must use the standard template — <strong>Part Number, VIN, Shop</strong>. Use the
+                        <strong>Download Cutoff Template</strong> dropdown above and pick a shop (Welding/Toso/Assy) to
+                        get a file with that shop's Part Numbers and Shop Code already filled in — just type in the VIN
+                        column and upload it back. One row per part number — each part is installed at a different
+                        point along the line, so each one needs its own cutoff VIN. The VIN must already exist in the
+                        cached <a href="<?= base_url($source) ?>">Master WIP</a> data for that Shop
                         (<?= html_escape(implode(', ', $shop_codes)) ?>).
                         Uploading again replaces the cutoff for the part(s) included in the file; parts left out keep
                         their current cutoff (or stay totaled if none was set yet).
+                    </p>
+                    <p class="small text-warning">
+                        <i class="bi bi-exclamation-triangle me-1"></i>If you fill the VIN column with a formula (e.g.
+                        <code>VLOOKUP</code>) pulling from another workbook, paste it back as <strong>Values only</strong>
+                        (Copy → Paste Special → Values) before saving — otherwise the cell may only carry the formula
+                        text, not the VIN itself, and every row will fail as &quot;VIN not found&quot;.
                     </p>
                     <label class="upload-dropzone d-block mb-3" id="dropzoneCutoff">
                         <i class="bi bi-file-earmark-excel fs-2 d-block mb-1"></i>

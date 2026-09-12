@@ -127,7 +127,7 @@ class Wip extends MY_Controller
     public function kap1_calc_template()
     {
         $this->load->model('Wip_calc_model');
-        $this->Wip_calc_model->download_template('kap1');
+        $this->Wip_calc_model->download_template('kap1', (string) $this->input->get('shop'));
     }
 
     public function kap1_calc_export()
@@ -251,7 +251,7 @@ class Wip extends MY_Controller
     public function kap2_calc_template()
     {
         $this->load->model('Wip_calc_model');
-        $this->Wip_calc_model->download_template('kap2');
+        $this->Wip_calc_model->download_template('kap2', (string) $this->input->get('shop'));
     }
 
     public function kap2_calc_export()
@@ -497,12 +497,16 @@ class Wip extends MY_Controller
         $result = $this->Wip_calc_model->upsert_cutoffs($source, $parsed['rows'], $this->auth_user['id']);
         @unlink($uploaded['full_path']);
 
-        $skipped_total = $parsed['skipped'] + $result['not_found'] + $result['wrong_source'];
+        $formula_cells = $parsed['formula_cells'] ?? 0;
+        $skipped_total = $parsed['skipped'] + $result['not_found'] + $result['wrong_source'] + $formula_cells;
 
         $message = "Applied cutoff VIN for {$result['applied']} part(s)";
         if ($skipped_total > 0) {
             $message .= ", skipped {$skipped_total} row(s)";
             $reasons = array();
+            if ($formula_cells > 0) {
+                $reasons[] = "{$formula_cells} VIN cell still had a formula (e.g. VLOOKUP) instead of a plain value — copy/paste as Values only, then re-upload";
+            }
             if ($result['not_found'] > 0) {
                 $reasons[] = "{$result['not_found']} VIN not found in the cached WIP data";
             }
