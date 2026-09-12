@@ -11,11 +11,17 @@
 </div>
 
 <ul class="nav nav-tabs shop-tabs mb-3" id="shopTabs">
+    <?php $is_admin = ($auth_user['role'] ?? '') === 'admin'; ?>
     <?php $first = true; foreach ($shops as $key => $label): ?>
     <li class="nav-item">
-        <button class="nav-link <?= $first ? 'active' : '' ?>" data-shop="<?= $key ?>" type="button">
+        <button class="nav-link <?= $is_admin ? 'has-clear' : '' ?> <?= $first ? 'active' : '' ?>" data-shop="<?= $key ?>" type="button">
             <?= html_escape($label) ?>
         </button>
+        <?php if ($is_admin): ?>
+        <button type="button" class="btn-clear-shop" data-shop="<?= $key ?>" data-shop-label="<?= html_escape($label) ?>" title="Clear cached <?= html_escape($label) ?> WIP data">
+            <i class="bi bi-x-circle"></i>
+        </button>
+        <?php endif; ?>
     </li>
     <?php $first = false; endforeach; ?>
     <li class="ms-auto d-flex align-items-center gap-2 pe-2">

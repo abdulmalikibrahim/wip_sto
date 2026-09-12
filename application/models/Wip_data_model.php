@@ -143,6 +143,25 @@ class Wip_data_model extends CI_Model
         $this->db->where('source', $source)->delete($this->table);
     }
 
+    /**
+     * Clear the cached WIP rows for just one shop within a source — the
+     * per-shop "Clear" button on the Master WIP page. Unlike truncate_source()
+     * this leaves the other shops' cached data untouched. WIP Calc cutoffs
+     * are not affected here; they simply fall back to Gross totals (no
+     * cached units at all) for this shop until fresh data is pulled/uploaded.
+     *
+     * @return int number of rows deleted
+     */
+    public function clear_shop($source, $shop)
+    {
+        $cleared = (int) $this->db->where('source', $source)->where('shop', $shop)->count_all_results($this->table);
+        if ($cleared > 0) {
+            $this->db->where('source', $source)->where('shop', $shop)->delete($this->table);
+        }
+
+        return $cleared;
+    }
+
     public function log($data)
     {
         $data = array_merge(array(

@@ -153,6 +153,52 @@
         getWip(currentShop);
     });
 
+    // Per-shop "Clear" button next to each tab — deletes that shop's cached
+    // WIP rows only (other shops and the live WIP server are untouched).
+    // Confirmed first since it can remove a lot of rows at once; reloads the
+    // current tab afterwards so an emptied active shop shows immediately.
+    $('#shopTabs').on('click', '.btn-clear-shop', function (e) {
+        e.stopPropagation(); // don't also switch tabs
+        var $btn = $(this);
+        var shop = $btn.data('shop');
+        var shopLabel = $btn.data('shop-label') || shop;
+
+        Swal.fire({
+            title: 'Clear ' + shopLabel + ' WIP data?',
+            html: 'This deletes every cached WIP row for <strong>' + esc(shopLabel) + '</strong>. ' +
+                'The live WIP server is not affected — pull or upload fresh data any time to bring it back.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Clear',
+            confirmButtonColor: '#dc3545',
+            background: '#21262f',
+            color: '#e4e6eb'
+        }).then(function (res) {
+            if (!res.isConfirmed) return;
+
+            $btn.prop('disabled', true);
+            var originalHtml = $btn.html();
+            $btn.html('<span class="spinner-border spinner-border-sm" role="status"></span>');
+
+            $.post(BASE_URL + WIP_SOURCE + '/clear/' + shop, null, null, 'json')
+                .done(function (resp) {
+                    if (resp.status !== 'success') {
+                        toast('error', resp.message || 'Failed to clear WIP data.');
+                        return;
+                    }
+                    toast('success', resp.message || 'WIP data cleared.');
+                    if (shop === currentShop) loadShop(shop);
+                })
+                .fail(function (xhr) {
+                    var msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Failed to reach the server.';
+                    toast('error', msg);
+                })
+                .always(function () {
+                    $btn.prop('disabled', false).html(originalHtml);
+                });
+        });
+    });
+
     $('#btnDownload').on('click', function () {
         window.location.href = BASE_URL + WIP_SOURCE + '/export/' + currentShop;
     });

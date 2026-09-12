@@ -62,6 +62,53 @@ class Wip extends MY_Controller
     }
 
     /**
+     * Clear the cached Master WIP data for one shop (AJAX only — the
+     * per-shop "Clear" button next to each shop tab). Only that shop's
+     * cached rows are removed; the other shops and the live WIP server are
+     * untouched. WIP Calc totals for this shop fall back to 0 (no cached
+     * units) until fresh data is pulled or uploaded again.
+     */
+    public function kap1_clear($shop)
+    {
+        $this->handle_clear_shop('kap1', $shop);
+    }
+
+    public function kap2_clear($shop)
+    {
+        $this->handle_clear_shop('kap2', $shop);
+    }
+
+    protected function handle_clear_shop($source, $shop)
+    {
+        $this->require_admin();
+
+        $this->load->model('Wip_data_model');
+        $shop_labels = $this->config->item('wip_shop_labels');
+        if (!isset($shop_labels[$shop])) {
+            $this->output->set_content_type('application/json')->set_output(json_encode(array(
+                'status'  => 'error',
+                'message' => 'Unknown Shop.',
+            )));
+            return;
+        }
+
+        $cleared = $this->Wip_data_model->clear_shop($source, $shop);
+        $label = $shop_labels[$shop];
+
+        $message = $cleared > 0
+            ? "Cleared {$cleared} cached {$label} row(s). Pull or upload fresh data to bring it back."
+            : "No cached {$label} data to clear.";
+
+        $this->output
+            ->set_content_type('application/json')
+            ->set_output(json_encode(array(
+                'status'  => 'success',
+                'message' => $message,
+                'cleared' => $cleared,
+            )));
+    }
+
+    /**
      * "Get Data WIP": pull fresh data from the live WIP server for one shop,
      * replace that shop's cached rows in the database, then respond with the
      * refreshed cache. On failure the existing cached data is left untouched.
