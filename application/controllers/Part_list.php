@@ -175,8 +175,8 @@ class Part_list extends MY_Controller
 
         // Extra notes from parsing the pivot format — non-numeric cells
         // (e.g. "X") skipped, duplicate Part No+Suffix+Model rows
-        // collapsed to their larger Qty, and Suffix columns Master BOM
-        // doesn't recognize yet (recorded with a blank Model instead).
+        // collapsed to their larger Qty, and rows whose Model column was
+        // itself blank in the uploaded file.
         $notes = array();
         if (!empty($parsed['skipped_non_numeric'])) {
             $notes[] = "{$parsed['skipped_non_numeric']} cell(s) had a non-numeric value (e.g. \"X\") and were skipped — please check those by hand.";
@@ -184,11 +184,11 @@ class Part_list extends MY_Controller
         if (!empty($parsed['duplicates_collapsed'])) {
             $notes[] = "{$parsed['duplicates_collapsed']} duplicate row(s) for the same Part No + Suffix were collapsed, keeping the larger Qty.";
         }
-        if (!empty($parsed['unresolved_suffixes'])) {
-            $count = count($parsed['unresolved_suffixes']);
-            $sample = implode(', ', array_slice($parsed['unresolved_suffixes'], 0, 10));
+        if (!empty($parsed['blank_model_suffixes'])) {
+            $count = count($parsed['blank_model_suffixes']);
+            $sample = implode(', ', array_slice($parsed['blank_model_suffixes'], 0, 10));
             $more = $count > 10 ? ', ...' : '';
-            $notes[] = "{$count} Suffix column(s) not found (or ambiguous) in Master BOM were recorded with a blank Model: {$sample}{$more}.";
+            $notes[] = "{$parsed['blank_model_cells']} cell(s) across {$count} Suffix column(s) had a blank Model in the uploaded file: {$sample}{$more}.";
         }
 
         $message = "Part List uploaded: {$result['inserted']} rows inserted, {$result['skipped']} skipped.";

@@ -15,13 +15,13 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx as XlsxWriter;
  *
  * Unlike Master BOM's own upload (one row per Model+Suffix+Component
  * line), Part List's real-world source is a wide "pivot" spreadsheet: one
- * row per part (Part No/Part Name/Shop), one column per Suffix, and the
- * Qty in the cell where that part is used at that suffix — matching the
- * factory's actual "PARTLIST" master file. Model isn't a column here (a
- * part can list several models as free text, e.g. "D55L&D52B&D74A"); it's
- * resolved per Suffix from Master BOM's own Suffix->Model data instead,
- * since that's the only way a Part List row becomes comparable to a BOM
- * row under the same Model+Suffix+Part Number key (see parse_excel()).
+ * row per part (Part No/Part Name/Shop/Model), one column per Suffix, and
+ * the Qty in the cell where that part is used at that suffix — matching
+ * the factory's actual "PARTLIST" master file. A row's Model column is
+ * taken as-is straight from the file (it can be a single model, e.g.
+ * "D52B", or several joined with "&", e.g. "D55L&D52B&D74A") — it is
+ * never looked up or second-guessed against Master BOM, so what's in
+ * the upload is exactly what ends up in Part List (see parse_excel()).
  */
 class Part_list_model extends CI_Model
 {
@@ -323,17 +323,16 @@ class Part_list_model extends CI_Model
      * holding 0 is treated the same as blank — a 0 qty means the part
      * isn't actually used at that suffix, so no row is created for it.
      *
-     * Each Suffix's Model is resolved in one of two ways, so the row
-     * becomes comparable to a BOM row under the same Model+Suffix+Part
-     * Number key: if the row's own Model column names just ONE model
-     * (not a "&"-joined multi-model list), that's used directly for every
-     * suffix on the row — it's unambiguous and more reliable than a
-     * BOM-wide guess. Otherwise (multi-model rows, where the file's own
-     * text can't say which model a given suffix belongs to), it falls
-     * back to Master BOM's own Suffix->Model data. A suffix that still
-     * can't be resolved either way is recorded with a blank Model (it'll
-     * surface as "Only in Part List" on the Compare page, which is the
-     * point — it flags something to go check).
+     * Every suffix on a row gets that row's own Model column value, taken
+     * as-is — never looked up or guessed from Master BOM. If the file
+     * says "D55L&D52B&D74A" for this part, that's what lands in Part
+     * List for every one of its suffixes; if it says just "D52B", that's
+     * what lands. This means a multi-model row won't line up with any of
+     * Master BOM's single-model rows under the Compare page's Model+
+     * Suffix+Part Number key (it'll show as "Only in Part List" there),
+     * which is an accepted trade-off — Part List always mirrors the
+     * upload file exactly, rather than the code substituting its own
+     * guess at which single model a given suffix "really" belongs to.
      *
      * A cell holding a non-numeric marker (the real file uses "X") is
      * skipped, not guessed at — counted in $skipped_non_numeric instead so
@@ -347,7 +346,7 @@ class Part_list_model extends CI_Model
      * duplicate is just an incomplete copy, not a genuinely smaller count.
      *
      * @return array{ok:bool, message:string, rows?:array, skipped_non_numeric?:int,
-     *     duplicates_collapsed?:int, unresolved_suffixes?:string[], unresolved_cells?:int}
+     *     duplicates_collapsed?:int, blank_model_suffixes?:string[], blank_model_cells?:int}
      */
     public function parse_excel($file_path)
     {
@@ -428,8 +427,6 @@ class Part_list_model extends CI_Model
             return array('ok' => false, 'message' => 'No Suffix columns found after Part No/Part Name/Shop/Model.');
         }
 
-        $suffix_model_map = $this->bom_suffix_model_map();
-
         // Keyed by "COMPONENT|SUFFIX|MODEL" (upper-cased) so a genuine
         // duplicate collapses onto the same accumulator entry.
         $acc = array();
@@ -447,16 +444,10 @@ class Part_list_model extends CI_Model
             $partName = trim((string) $sheet->getCell('B' . $row->getRowIndex())->getValue());
             $shopCode = $this->normalize_shop_code($sheet->getCell('C' . $row->getRowIndex())->getValue());
 
-            // A row's own Model column is free text (e.g. "D55L&D52B&D74A"
-            // when the part spans several models) — unusable per-suffix in
-            // that case. But when it names just ONE model, it's the most
-            // reliable source there is: use it directly for every suffix
-            // on this row instead of falling back to the (incomplete)
-            // Master BOM suffix lookup, which otherwise leaves a real part
-            // with a blank Model just because BOM doesn't cover that
-            // particular suffix yet.
-            $rowModelRaw = trim((string) $sheet->getCell('D' . $row->getRowIndex())->getValue());
-            $rowSingleModel = ($rowModelRaw !== '' && strpos($rowModelRaw, '&') === false) ? $rowModelRaw : '';
+            // Taken as-is from the file, whatever it says — single model
+            // or several joined with "&" — never looked up against Master
+            // BOM. Same value for every suffix on this row.
+            $rowModel = trim((string) $sheet->getCell('D' . $row->getRowIndex())->getValue());
 
             foreach ($suffixColumns as $colIndex => $suffix) {
                 $colLetter = $this->column_letter($colIndex);
@@ -475,13 +466,12 @@ class Part_list_model extends CI_Model
                     continue; // a 0 qty means the part isn't actually used at this suffix — treat like blank
                 }
 
-                $model = $rowSingleModel !== '' ? $rowSingleModel : ($suffix_model_map[strtoupper($suffix)] ?? '');
-                if ($model === '') {
+                if ($rowModel === '') {
                     $unresolved_suffix_set[$suffix] = true;
                     $unresolved_cells++;
                 }
 
-                $key = strtoupper($partNo) . '|' . strtoupper($suffix) . '|' . strtoupper($model);
+                $key = strtoupper($partNo) . '|' . strtoupper($suffix) . '|' . strtoupper($rowModel);
                 if (isset($acc[$key])) {
                     $duplicates_collapsed++;
                     if ($qty > $acc[$key]['qty']) {
@@ -491,7 +481,7 @@ class Part_list_model extends CI_Model
                 }
 
                 $acc[$key] = array(
-                    'model'                => $model,
+                    'model'                => $rowModel,
                     'suffix'               => $suffix,
                     'component'            => $partNo,
                     'material_description' => $partName,
@@ -508,43 +498,9 @@ class Part_list_model extends CI_Model
             'rows'                  => array_values($acc),
             'skipped_non_numeric'   => $skipped_non_numeric,
             'duplicates_collapsed'  => $duplicates_collapsed,
-            'unresolved_suffixes'   => array_keys($unresolved_suffix_set),
-            'unresolved_cells'      => $unresolved_cells,
+            'blank_model_suffixes'  => array_keys($unresolved_suffix_set),
+            'blank_model_cells'     => $unresolved_cells,
         );
-    }
-
-    /**
-     * Suffix (upper-cased) -> Model, from Master BOM's own data — the
-     * lookup parse_excel() uses to give each Part List row a Model
-     * comparable to BOM's. A Suffix that names more than one distinct
-     * Model in BOM is left unresolved (blank) rather than guessed at.
-     */
-    protected function bom_suffix_model_map()
-    {
-        $rows = $this->db->distinct()->select('suffix, model')
-            ->from('bom')
-            ->where('suffix !=', null)
-            ->where('suffix !=', '')
-            ->where('model !=', null)
-            ->where('model !=', '')
-            ->get()->result_array();
-
-        $by_suffix = array();
-        foreach ($rows as $row) {
-            $suffix = strtoupper(trim($row['suffix']));
-            $model = trim($row['model']);
-            $by_suffix[$suffix][$model] = true;
-        }
-
-        $map = array();
-        foreach ($by_suffix as $suffix => $models) {
-            if (count($models) === 1) {
-                $map[$suffix] = array_key_first($models);
-            }
-            // count() > 1 -> ambiguous, left out of the map on purpose (resolves to blank)
-        }
-
-        return $map;
     }
 
     /**

@@ -194,7 +194,7 @@
                         <code>part_number</code> is generated automatically from <code>Part No</code> (trailing "-00" removed). Shop can list more than one shop, separated by commas (e.g. <code>WELD3,ASSY3,TOSO3</code>).
                     </p>
                     <p class="small text-secondary">
-                        Each Suffix column's Model is looked up from Master BOM automatically (not read from the Model column, which is just free text here) — a Suffix Master BOM doesn't recognize yet is still uploaded, just flagged in the result message. Non-numeric cells (e.g. "X") are skipped and reported, not guessed at.
+                        The <strong>Model</strong> column is used exactly as written for every Suffix on that row (e.g. a part listed under "D55L&amp;D52B&amp;D74A" keeps that combined value, not a single guessed model) — a blank Model is still uploaded, just flagged in the result message. Non-numeric cells (e.g. "X") are skipped and reported, not guessed at.
                     </p>
                     <label class="upload-dropzone d-block mb-3" id="dropzone">
                         <i class="bi bi-file-earmark-excel fs-2 d-block mb-1"></i>
