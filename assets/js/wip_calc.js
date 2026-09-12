@@ -124,6 +124,53 @@
         setShopFilter(null);
     });
 
+    // Per-shop "Clear" button — deletes every cutoff VIN set for that shop,
+    // so its totals fall back to Gross (every cached unit) until new
+    // cutoffs are set. Only the cutoffs are removed, not the cached Master
+    // WIP data itself. Confirmed first since it can affect many parts at once.
+    $('#cutoffStatus').on('click', '.btn-clear-cutoff', function (e) {
+        e.stopPropagation(); // don't also trigger the card's shop-filter click
+        var $btn = $(this);
+        var shop = $btn.data('shop');
+        var shopLabel = $btn.data('shop-label') || shop;
+
+        Swal.fire({
+            title: 'Clear ' + shopLabel + ' cutoff VINs?',
+            html: 'This removes every cutoff VIN currently set for <strong>' + esc(shopLabel) + '</strong>. ' +
+                'Its totals will go back to Gross (every cached unit) for all parts until new cutoffs are set. ' +
+                'The cached Master WIP data itself is not affected.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Clear',
+            confirmButtonColor: '#dc3545',
+            background: '#21262f',
+            color: '#e4e6eb'
+        }).then(function (res) {
+            if (!res.isConfirmed) return;
+
+            $btn.prop('disabled', true);
+            var originalHtml = $btn.html();
+            $btn.html('<span class="spinner-border spinner-border-sm" role="status"></span>');
+
+            $.post(BASE_URL + WIP_CALC_SOURCE + '/calc/cutoff/clear', { shop: shop }, null, 'json')
+                .done(function (resp) {
+                    if (resp.status !== 'success') {
+                        toast('error', resp.message || 'Failed to clear cutoff VINs.');
+                        return;
+                    }
+                    toast('success', resp.message || 'Cutoff VINs cleared.');
+                    load();
+                })
+                .fail(function (xhr) {
+                    var msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Failed to reach the server.';
+                    toast('error', msg);
+                })
+                .always(function () {
+                    $btn.prop('disabled', false).html(originalHtml);
+                });
+        });
+    });
+
     function updateExportHref() {
         $btnExportCalc.attr('href', hideZeroRows ? (exportBaseHref + '?hide_zero=1') : exportBaseHref);
     }

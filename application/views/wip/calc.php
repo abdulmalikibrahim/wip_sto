@@ -9,15 +9,20 @@
             <div class="col-sm-4">
                 <div class="stat-card stat-card-filter" data-cutoff-shop="<?= $key ?>" title="Click to show only <?= html_escape($label) ?> data">
                     <div class="stat-icon"><i class="bi bi-signpost-2"></i></div>
-                    <div>
+                    <div class="flex-grow-1">
                         <div class="stat-value fs-6" data-cutoff-summary>&mdash;</div>
                         <div class="stat-label"><?= html_escape($label) ?> parts with a cutoff VIN</div>
                     </div>
+                    <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
+                    <button type="button" class="btn btn-sm btn-outline-danger btn-clear-cutoff" data-shop="<?= $key ?>" data-shop-label="<?= html_escape($label) ?>" title="Clear all <?= html_escape($label) ?> cutoff VINs (back to Gross totals)">
+                        <i class="bi bi-x-circle"></i>
+                    </button>
+                    <?php endif; ?>
                 </div>
             </div>
             <?php endforeach; ?>
         </div>
-        <div class="form-text mt-2 mb-0"><i class="bi bi-cursor"></i> Click a shop above to filter the list to just that shop; click it again (or the &times; below) to show all shops.</div>
+        <div class="form-text mt-2 mb-0"><i class="bi bi-cursor"></i> Click a shop above to filter the list to just that shop; click it again (or the &times; below) to show all shops. Click <i class="bi bi-x-circle"></i> to clear that shop's cutoff VINs (back to Gross totals).</div>
     </div>
 </div>
 

@@ -33,8 +33,6 @@ class Part_list extends MY_Controller
             $rows[] = array(
                 'no'                   => $start + $i + 1,
                 'id'                   => $r['id'],
-                'material'             => $r['material'],
-                'katashiki'            => $r['katashiki'],
                 'model'                => $r['model'],
                 'suffix'               => $r['suffix'],
                 'component'            => $r['component'],
@@ -114,6 +112,19 @@ class Part_list extends MY_Controller
     }
 
     /**
+     * Download the Compare (Master BOM vs Part List) diff list as .xlsx,
+     * honoring whichever Status filter / search text is applied on screen.
+     */
+    public function compare_export()
+    {
+        $this->Part_list_model->export_compare(
+            (string) $this->input->get('status_filter'),
+            (string) $this->input->get('model_filter'),
+            (string) $this->input->get('search')
+        );
+    }
+
+    /**
      * Handle the Excel upload (append or replace existing data).
      */
     public function upload()
@@ -162,6 +173,29 @@ class Part_list extends MY_Controller
         $result = $this->Part_list_model->insert_rows($parsed['rows']);
         @unlink($uploaded['full_path']);
 
+        // Extra notes from parsing the pivot format — non-numeric cells
+        // (e.g. "X") skipped, duplicate Part No+Suffix+Model rows
+        // collapsed to their larger Qty, and Suffix columns Master BOM
+        // doesn't recognize yet (recorded with a blank Model instead).
+        $notes = array();
+        if (!empty($parsed['skipped_non_numeric'])) {
+            $notes[] = "{$parsed['skipped_non_numeric']} cell(s) had a non-numeric value (e.g. \"X\") and were skipped — please check those by hand.";
+        }
+        if (!empty($parsed['duplicates_collapsed'])) {
+            $notes[] = "{$parsed['duplicates_collapsed']} duplicate row(s) for the same Part No + Suffix were collapsed, keeping the larger Qty.";
+        }
+        if (!empty($parsed['unresolved_suffixes'])) {
+            $count = count($parsed['unresolved_suffixes']);
+            $sample = implode(', ', array_slice($parsed['unresolved_suffixes'], 0, 10));
+            $more = $count > 10 ? ', ...' : '';
+            $notes[] = "{$count} Suffix column(s) not found (or ambiguous) in Master BOM were recorded with a blank Model: {$sample}{$more}.";
+        }
+
+        $message = "Part List uploaded: {$result['inserted']} rows inserted, {$result['skipped']} skipped.";
+        if ($notes) {
+            $message .= ' ' . implode(' ', $notes);
+        }
+
         $this->Part_list_model->log_upload(array(
             'file_name'     => $uploaded['client_name'],
             'mode'          => $mode,
@@ -169,11 +203,11 @@ class Part_list extends MY_Controller
             'inserted_rows' => $result['inserted'],
             'skipped_rows'  => $result['skipped'],
             'status'        => 'success',
-            'message'       => 'Uploaded successfully.',
+            'message'       => $message,
             'user_id'       => $this->auth_user['id'],
         ));
 
-        set_flash('success', "Part List uploaded: {$result['inserted']} rows inserted, {$result['skipped']} skipped.");
+        set_flash($notes ? 'warning' : 'success', $message);
         redirect('part-list');
     }
 

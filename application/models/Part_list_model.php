@@ -9,25 +9,35 @@ use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx as XlsxWriter;
 
 /**
- * Part List: a second BOM-shaped table (same 9-column upload template as
- * Master BOM) whose whole purpose is to be checked against `bom` for
- * mismatches — see compare()/compare_summary() below.
+ * Part List: a second BOM-shaped table whose whole purpose is to be
+ * checked against `bom` for mismatches — see compare()/compare_summary()
+ * below.
+ *
+ * Unlike Master BOM's own upload (one row per Model+Suffix+Component
+ * line), Part List's real-world source is a wide "pivot" spreadsheet: one
+ * row per part (Part No/Part Name/Shop), one column per Suffix, and the
+ * Qty in the cell where that part is used at that suffix — matching the
+ * factory's actual "PARTLIST" master file. Model isn't a column here (a
+ * part can list several models as free text, e.g. "D55L&D52B&D74A"); it's
+ * resolved per Suffix from Master BOM's own Suffix->Model data instead,
+ * since that's the only way a Part List row becomes comparable to a BOM
+ * row under the same Model+Suffix+Part Number key (see parse_excel()).
  */
 class Part_list_model extends CI_Model
 {
     protected $table = 'part_list';
 
-    /** Required header columns of the upload/template Excel file, in order. Same as Master BOM. */
-    public $required_headers = array(
-        'Material', 'Katashiki', 'Model', 'Suffix', 'Component', 'Material Description', 'Qty', 'Uom', 'Shop Code',
-    );
+    /** Fixed leading columns of the upload/template Excel file; every column after these is a Suffix. */
+    public $required_headers = array('Part No', 'Part Name', 'Shop', 'Model');
 
-    /** Fields compared row-for-row once two sides share the same Model+Suffix+Part Number key. */
+    /**
+     * Fields compared row-for-row once two sides share the same
+     * Model+Suffix+Part Number key. Material/Katashiki/Uom are left out —
+     * the pivot upload format never carries them, so comparing them would
+     * just flag every single row as "Different" for no useful reason.
+     */
     protected $compare_fields = array(
-        'material'             => 'Material',
-        'katashiki'            => 'Katashiki',
         'qty'                  => 'Qty',
-        'uom'                  => 'Uom',
         'shop_code'            => 'Shop Code',
         'material_description' => 'Material Description',
     );
@@ -42,7 +52,7 @@ class Part_list_model extends CI_Model
      */
     public function datatable($request)
     {
-        $columns = array('id', 'material', 'katashiki', 'model', 'suffix', 'component', 'part_number', 'material_description', 'qty', 'uom', 'shop_code');
+        $columns = array('id', 'model', 'suffix', 'component', 'part_number', 'material_description', 'qty', 'uom', 'shop_code');
 
         $this->db->from($this->table);
 
@@ -54,9 +64,7 @@ class Part_list_model extends CI_Model
         $search = $request['search']['value'] ?? '';
         if ($search !== '') {
             $this->db->group_start();
-            $this->db->like('material', $search);
-            $this->db->or_like('katashiki', $search);
-            $this->db->or_like('model', $search);
+            $this->db->like('model', $search);
             $this->db->or_like('suffix', $search);
             $this->db->or_like('component', $search);
             $this->db->or_like('part_number', $search);
@@ -123,37 +131,49 @@ class Part_list_model extends CI_Model
     }
 
     /**
-     * Stream the upload template. Identical layout to Master BOM's template
-     * (same required columns) so the same source file can be reused.
+     * Stream the upload template: Part No / Part Name / Shop / Model, then
+     * one column per Suffix currently defined in Master BOM (so the
+     * template always matches whatever suffixes BOM actually has). Falls
+     * back to a couple of placeholder suffix columns when BOM is empty.
      */
     public function download_template()
     {
+        $suffixes = $this->bom_suffix_columns();
+        if (empty($suffixes)) {
+            $suffixes = array('MN', 'XX'); // placeholders — nothing in Master BOM yet to base real ones on
+        }
+
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Part List');
 
-        $sheet->fromArray($this->required_headers, null, 'A1');
-        $sheet->getStyle('A1:I1')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle('A1:I1')->getFill()
+        $headers = array_merge($this->required_headers, $suffixes);
+        $sheet->fromArray($headers, null, 'A1');
+        $lastCol = $this->column_letter(count($headers) - 1);
+        $sheet->getStyle("A1:{$lastCol}1")->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle("A1:{$lastCol}1")->getFill()
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('1F6FEB');
 
+        // Part No holds long codes (e.g. 9004A-11336-00); keep it as text
+        // so Excel never collapses a numeric-looking one into scientific notation.
         $sheet->getStyle('A1:A1048576')->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
 
-        $examples = array(
-            array('11103102000000', 'A251LA-GMXF', 'D26A', 'MN', '09101-BZ030-00', 'TOOL SET, STD L/JACK', 1, 'PC', 'WELD3,ASSY3,TOSO3'),
-            array('11103102000000', 'A251LA-GMXF', 'D74A', 'MN', '11293-BZ840-00', 'LABEL, TUNE-UP SPECIFICATION INFORMATION', 1, 'PC', 'WELD3,ASSY3'),
-        );
+        $example = array('9004A-11336-00', 'BOLT, WELD', 'WELD3', 'D26A');
+        $sheet->setCellValueExplicit('A2', $example[0], DataType::TYPE_STRING);
+        $sheet->fromArray(array_slice($example, 1), null, 'B2');
+        // One example qty in the first suffix column, so the shape is obvious at a glance.
+        $sheet->setCellValue($this->column_letter(count($this->required_headers)) . '2', 1);
 
-        $row = 2;
-        foreach ($examples as $example) {
-            $sheet->setCellValueExplicit("A{$row}", $example[0], DataType::TYPE_STRING);
-            $sheet->fromArray(array_slice($example, 1), null, "B{$row}");
-            $row++;
-        }
-
-        foreach (range('A', 'I') as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
+        $sheet->getColumnDimension('A')->setAutoSize(true);
+        $sheet->getColumnDimension('B')->setAutoSize(true);
+        $sheet->getColumnDimension('C')->setAutoSize(true);
+        $sheet->getColumnDimension('D')->setAutoSize(true);
+        // Autosizing every suffix column individually is slow once there are
+        // hundreds of them (see parse_excel()'s note on the real file's
+        // size) — a fixed narrow width reads fine for short 2-3 char codes.
+        for ($i = count($this->required_headers); $i < count($headers); $i++) {
+            $sheet->getColumnDimension($this->column_letter($i))->setWidth(6);
         }
 
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -165,12 +185,80 @@ class Part_list_model extends CI_Model
     }
 
     /**
+     * Every distinct Suffix currently in Master BOM, in Model then Suffix
+     * order (deduplicated — a Suffix that somehow appears under more than
+     * one Model in BOM is only listed once, at its first occurrence).
+     */
+    protected function bom_suffix_columns()
+    {
+        $rows = $this->db->distinct()->select('model, suffix')
+            ->from('bom')
+            ->where('suffix !=', null)
+            ->where('suffix !=', '')
+            ->order_by('model', 'asc')
+            ->order_by('suffix', 'asc')
+            ->get()->result_array();
+
+        $seen = array();
+        $suffixes = array();
+        foreach ($rows as $row) {
+            $suffix = trim($row['suffix']);
+            if ($suffix === '' || isset($seen[$suffix])) {
+                continue;
+            }
+            $seen[$suffix] = true;
+            $suffixes[] = $suffix;
+        }
+
+        return $suffixes;
+    }
+
+    /**
+     * Parse a php.ini shorthand size value (e.g. "512M", "1G", "-1" for
+     * unlimited) into a byte count.
+     */
+    protected function to_bytes($iniValue)
+    {
+        $iniValue = trim((string) $iniValue);
+        if ($iniValue === '' || $iniValue === '-1') {
+            return -1;
+        }
+
+        $unit = strtolower(substr($iniValue, -1));
+        $num = (int) $iniValue;
+        switch ($unit) {
+            case 'g': return $num * 1024 * 1024 * 1024;
+            case 'm': return $num * 1024 * 1024;
+            case 'k': return $num * 1024;
+            default:  return $num;
+        }
+    }
+
+    /**
+     * 0-based column index -> spreadsheet column letter(s) (0 -> A, 25 ->
+     * Z, 26 -> AA, ...) — needed once the Suffix columns run past Z, which
+     * they will (the real file has 140+ of them).
+     */
+    protected function column_letter($index)
+    {
+        $letter = '';
+        $index++;
+        while ($index > 0) {
+            $mod = ($index - 1) % 26;
+            $letter = chr(65 + $mod) . $letter;
+            $index = intdiv($index - $mod, 26);
+        }
+
+        return $letter;
+    }
+
+    /**
      * Stream every Part List record (optionally narrowed to one Model) as
      * an .xlsx download.
      */
     public function export_data($model_filter = '')
     {
-        $this->db->select('material, katashiki, model, suffix, component, part_number, material_description, qty, uom, shop_code')
+        $this->db->select('model, suffix, component, part_number, material_description, qty, uom, shop_code')
             ->from($this->table)
             ->order_by('model', 'asc')
             ->order_by('suffix', 'asc')
@@ -187,34 +275,34 @@ class Part_list_model extends CI_Model
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Part List');
 
-        $headers = array('No', 'Material', 'Katashiki', 'Model', 'Suffix', 'Component', 'Part Number', 'Material Description', 'Qty', 'Uom', 'Shop Code');
+        $headers = array('No', 'Model', 'Suffix', 'Component', 'Part Number', 'Material Description', 'Qty', 'Uom', 'Shop Code');
         $sheet->fromArray($headers, null, 'A1');
-        $sheet->getStyle('A1:K1')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle('A1:K1')->getFill()
+        $sheet->getStyle('A1:I1')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A1:I1')->getFill()
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('1F6FEB');
 
-        foreach (array('A', 'F', 'G') as $col) {
+        // Component (D) and Part Number (E) hold codes like "9004A-11336-00".
+        foreach (array('D', 'E') as $col) {
             $sheet->getStyle("{$col}1:{$col}1048576")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
         }
 
         $r = 2;
         foreach ($rows as $i => $row) {
             $sheet->setCellValueExplicit("A{$r}", $i + 1, DataType::TYPE_NUMERIC);
-            $sheet->setCellValueExplicit("B{$r}", $row['material'], DataType::TYPE_STRING);
-            $sheet->fromArray(array($row['katashiki'], $row['model'], $row['suffix']), null, "C{$r}");
-            $sheet->setCellValueExplicit("F{$r}", $row['component'], DataType::TYPE_STRING);
-            $sheet->setCellValueExplicit("G{$r}", $row['part_number'], DataType::TYPE_STRING);
+            $sheet->fromArray(array($row['model'], $row['suffix']), null, "B{$r}");
+            $sheet->setCellValueExplicit("D{$r}", $row['component'], DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit("E{$r}", $row['part_number'], DataType::TYPE_STRING);
             $sheet->fromArray(array(
                 $row['material_description'],
                 rtrim(rtrim(number_format((float) $row['qty'], 3, '.', ''), '0'), '.'),
                 $row['uom'],
                 $row['shop_code'],
-            ), null, "H{$r}");
+            ), null, "F{$r}");
             $r++;
         }
 
-        foreach (range('A', 'K') as $col) {
+        foreach (range('A', 'I') as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
@@ -229,13 +317,44 @@ class Part_list_model extends CI_Model
     }
 
     /**
-     * Parse an uploaded Excel file and validate its header row. Identical
-     * rules to Master BOM's upload.
+     * Parse an uploaded "pivot" Part List file: Part No / Part Name / Shop
+     * / Model, then one column per Suffix (header = the Suffix code, cell
+     * = that part's Qty at that suffix, blank = not used there).
      *
-     * @return array{ok:bool, message:string, rows?:array}
+     * Each Suffix's Model is resolved from Master BOM's own Suffix->Model
+     * data (see resolve_model_for_suffix()) — not from this file's own
+     * free-text Model column — since that's the only way the row becomes
+     * comparable to BOM under the same Model+Suffix+Part Number key. A
+     * suffix BOM doesn't know about yet is still recorded, just with a
+     * blank Model (it'll surface as "Only in Part List" on the Compare
+     * page, which is the point — it flags something to go check).
+     *
+     * A cell holding a non-numeric marker (the real file uses "X") is
+     * skipped, not guessed at — counted in $skipped_non_numeric instead so
+     * the upload result tells you to go check those cells by hand.
+     *
+     * The same (Part No, Suffix, resolved Model) can legitimately appear
+     * more than once — the real master file carries outright duplicate
+     * rows for the same part (copy/paste artifacts) that don't always
+     * agree with each other. The larger Qty wins ($duplicates_collapsed
+     * counts how often this happened), on the assumption that a smaller
+     * duplicate is just an incomplete copy, not a genuinely smaller count.
+     *
+     * @return array{ok:bool, message:string, rows?:array, skipped_non_numeric?:int,
+     *     duplicates_collapsed?:int, unresolved_suffixes?:string[], unresolved_cells?:int}
      */
     public function parse_excel($file_path)
     {
+        // The real master file (Part No x Suffix, ~5,800 rows x ~140
+        // columns) measured at ~470MB peak loading + parsing it — already
+        // over 90% of this app's default 512M memory_limit, and it only
+        // grows over time as more parts/suffixes are added. Raised here
+        // rather than globally, since only this one action needs it.
+        $current = $this->to_bytes(ini_get('memory_limit'));
+        if ($current !== -1 && $current < 1024 * 1024 * 1024) {
+            @ini_set('memory_limit', '1024M');
+        }
+
         try {
             $reader = IOFactory::createReaderForFile($file_path);
             $reader->setReadDataOnly(true);
@@ -244,56 +363,142 @@ class Part_list_model extends CI_Model
             return array('ok' => false, 'message' => 'Unable to read the Excel file: ' . $e->getMessage());
         }
 
-        $rows = array();
-        $header_checked = false;
+        $sheet = $spreadsheet->getSheet(0);
+        $highestRow = $sheet->getHighestDataRow();
+        $highestCol = $sheet->getHighestDataColumn();
 
-        foreach ($spreadsheet->getWorksheetIterator() as $worksheet) {
-            foreach ($worksheet->getRowIterator() as $row) {
-                $rowIndex = $row->getRowIndex();
+        // ---- Header row: fixed 4 columns, then one Suffix per column
+        // after that (blank-header columns are just skipped, not errors —
+        // the real file has stray blank trailing columns). ----
+        $headerCells = array();
+        $cellIterator = $sheet->getRowIterator(1, 1)->current()->getCellIterator('A', $highestCol);
+        $cellIterator->setIterateOnlyExistingCells(false);
+        foreach ($cellIterator as $cell) {
+            $headerCells[] = $cell->getValue();
+        }
 
-                $cellIterator = $row->getCellIterator('A', 'I');
-                $cellIterator->setIterateOnlyExistingCells(false);
-                $cells = array();
-                foreach ($cellIterator as $cell) {
-                    $cells[] = $cell->getValue();
+        if (!$this->header_matches($headerCells)) {
+            return array(
+                'ok' => false,
+                'message' => 'Invalid template. Expected the first columns to be: ' . implode(', ', $this->required_headers) . ', followed by one column per Suffix.',
+            );
+        }
+
+        $prefixCount = count($this->required_headers);
+        $suffixColumns = array(); // column index (0-based) => suffix code
+        for ($i = $prefixCount; $i < count($headerCells); $i++) {
+            $suffix = trim((string) ($headerCells[$i] ?? ''));
+            if ($suffix !== '') {
+                $suffixColumns[$i] = $suffix;
+            }
+        }
+
+        if (empty($suffixColumns)) {
+            return array('ok' => false, 'message' => 'No Suffix columns found after Part No/Part Name/Shop/Model.');
+        }
+
+        $suffix_model_map = $this->bom_suffix_model_map();
+
+        // Keyed by "COMPONENT|SUFFIX|MODEL" (upper-cased) so a genuine
+        // duplicate collapses onto the same accumulator entry.
+        $acc = array();
+        $skipped_non_numeric = 0;
+        $duplicates_collapsed = 0;
+        $unresolved_suffix_set = array();
+        $unresolved_cells = 0;
+
+        foreach ($sheet->getRowIterator(2, $highestRow) as $row) {
+            $partNo = trim((string) $sheet->getCell('A' . $row->getRowIndex())->getValue());
+            if ($partNo === '') {
+                continue; // no Part No -> not a real data row (e.g. leftover formula debris rows)
+            }
+
+            $partName = trim((string) $sheet->getCell('B' . $row->getRowIndex())->getValue());
+            $shopCode = $this->normalize_shop_code($sheet->getCell('C' . $row->getRowIndex())->getValue());
+
+            foreach ($suffixColumns as $colIndex => $suffix) {
+                $colLetter = $this->column_letter($colIndex);
+                $value = $sheet->getCell($colLetter . $row->getRowIndex())->getValue();
+                if ($value === null || $value === '') {
+                    continue;
                 }
 
-                if ($rowIndex === 1) {
-                    $header_checked = true;
-                    if (!$this->header_matches($cells)) {
-                        return array(
-                            'ok' => false,
-                            'message' => 'Invalid template. Expected columns: ' . implode(', ', $this->required_headers),
-                        );
+                if (!is_numeric($value)) {
+                    $skipped_non_numeric++;
+                    continue;
+                }
+
+                $qty = (float) $value;
+                $model = $suffix_model_map[strtoupper($suffix)] ?? '';
+                if ($model === '') {
+                    $unresolved_suffix_set[$suffix] = true;
+                    $unresolved_cells++;
+                }
+
+                $key = strtoupper($partNo) . '|' . strtoupper($suffix) . '|' . strtoupper($model);
+                if (isset($acc[$key])) {
+                    $duplicates_collapsed++;
+                    if ($qty > $acc[$key]['qty']) {
+                        $acc[$key]['qty'] = $qty;
                     }
                     continue;
                 }
 
-                if ($this->is_blank_row($cells)) {
-                    continue;
-                }
-
-                $rows[] = array(
-                    'material'             => trim((string) ($cells[0] ?? '')),
-                    'katashiki'            => trim((string) ($cells[1] ?? '')),
-                    'model'                => trim((string) ($cells[2] ?? '')),
-                    'suffix'               => trim((string) ($cells[3] ?? '')),
-                    'component'            => trim((string) ($cells[4] ?? '')),
-                    'material_description' => trim((string) ($cells[5] ?? '')),
-                    'qty'                  => is_numeric($cells[6] ?? null) ? (float) $cells[6] : 0,
-                    'uom'                  => trim((string) ($cells[7] ?? '')),
-                    'shop_code'            => $this->normalize_shop_code($cells[8] ?? ''),
+                $acc[$key] = array(
+                    'model'                => $model,
+                    'suffix'               => $suffix,
+                    'component'            => $partNo,
+                    'material_description' => $partName,
+                    'qty'                  => $qty,
+                    'uom'                  => '',
+                    'shop_code'            => $shopCode,
                 );
             }
-
-            break; // only the first sheet is used for uploads
         }
 
-        if (!$header_checked) {
-            return array('ok' => false, 'message' => 'The uploaded file is empty.');
+        return array(
+            'ok'                    => true,
+            'message'               => 'ok',
+            'rows'                  => array_values($acc),
+            'skipped_non_numeric'   => $skipped_non_numeric,
+            'duplicates_collapsed'  => $duplicates_collapsed,
+            'unresolved_suffixes'   => array_keys($unresolved_suffix_set),
+            'unresolved_cells'      => $unresolved_cells,
+        );
+    }
+
+    /**
+     * Suffix (upper-cased) -> Model, from Master BOM's own data — the
+     * lookup parse_excel() uses to give each Part List row a Model
+     * comparable to BOM's. A Suffix that names more than one distinct
+     * Model in BOM is left unresolved (blank) rather than guessed at.
+     */
+    protected function bom_suffix_model_map()
+    {
+        $rows = $this->db->distinct()->select('suffix, model')
+            ->from('bom')
+            ->where('suffix !=', null)
+            ->where('suffix !=', '')
+            ->where('model !=', null)
+            ->where('model !=', '')
+            ->get()->result_array();
+
+        $by_suffix = array();
+        foreach ($rows as $row) {
+            $suffix = strtoupper(trim($row['suffix']));
+            $model = trim($row['model']);
+            $by_suffix[$suffix][$model] = true;
         }
 
-        return array('ok' => true, 'message' => 'ok', 'rows' => $rows);
+        $map = array();
+        foreach ($by_suffix as $suffix => $models) {
+            if (count($models) === 1) {
+                $map[$suffix] = array_key_first($models);
+            }
+            // count() > 1 -> ambiguous, left out of the map on purpose (resolves to blank)
+        }
+
+        return $map;
     }
 
     /**
@@ -309,14 +514,12 @@ class Part_list_model extends CI_Model
         $batch = array();
 
         foreach ($rows as $row) {
-            if (($row['material'] === '' && $row['component'] === '') || $row['shop_code'] === '') {
+            if ($row['component'] === '' || $row['shop_code'] === '') {
                 $skipped++;
                 continue;
             }
 
             $batch[] = array(
-                'material'             => $row['material'],
-                'katashiki'            => $row['katashiki'],
                 'model'                => $row['model'],
                 'suffix'               => $row['suffix'],
                 'component'            => $row['component'],
@@ -350,6 +553,11 @@ class Part_list_model extends CI_Model
         $this->db->insert('part_list_upload_log', $data);
     }
 
+    /**
+     * Checks only the fixed leading columns (Part No/Part Name/Shop/Model)
+     * — everything after them is a variable-length list of Suffix columns,
+     * not a fixed set to validate.
+     */
     protected function header_matches(array $cells)
     {
         $normalize = function ($v) {
@@ -360,17 +568,6 @@ class Part_list_model extends CI_Model
         $actual = array_map($normalize, array_slice($cells, 0, count($this->required_headers)));
 
         return $expected === $actual;
-    }
-
-    protected function is_blank_row(array $cells)
-    {
-        foreach ($cells as $c) {
-            if (trim((string) $c) !== '') {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     protected function normalize_shop_code($raw)
@@ -396,7 +593,20 @@ class Part_list_model extends CI_Model
      */
     public function build_diff()
     {
-        $cols = 'model, katashiki, material, suffix, component, part_number, material_description, qty, uom, shop_code';
+        // Pulls the full `bom` (100k+ rows) and `part_list` tables into PHP
+        // on every call — same headroom concern as parse_excel() once
+        // Part List holds pivot-scale data (a wide upload can add 100k+
+        // rows on its own). See that method's comment for why this is
+        // raised per-action instead of globally.
+        $current = $this->to_bytes(ini_get('memory_limit'));
+        if ($current !== -1 && $current < 1024 * 1024 * 1024) {
+            @ini_set('memory_limit', '1024M');
+        }
+
+        // `part_list` no longer has material/katashiki columns (the pivot
+        // upload format never carried real data for them) — this list is
+        // shared for both tables, so it only names columns both have.
+        $cols = 'model, suffix, component, part_number, material_description, qty, uom, shop_code';
 
         $bom_rows = $this->db->select($cols)->from('bom')->get()->result_array();
         $part_list_rows = $this->db->select($cols)->from($this->table)->get()->result_array();
@@ -487,36 +697,14 @@ class Part_list_model extends CI_Model
     public function compare_datatable($request)
     {
         $diffs = $this->build_diff();
-
-        $status_filter = trim((string) ($request['status_filter'] ?? ''));
-        if ($status_filter !== '') {
-            $diffs = array_values(array_filter($diffs, function ($d) use ($status_filter) {
-                return $d['status'] === $status_filter;
-            }));
-        }
-
-        $model_filter = trim((string) ($request['model_filter'] ?? ''));
-        if ($model_filter !== '') {
-            $diffs = array_values(array_filter($diffs, function ($d) use ($model_filter) {
-                return $d['model'] === $model_filter;
-            }));
-        }
-
+        $diffs = $this->filter_diffs_by_status_and_model(
+            $diffs,
+            $request['status_filter'] ?? '',
+            $request['model_filter'] ?? ''
+        );
         $total = count($diffs);
 
-        $search = trim((string) ($request['search']['value'] ?? ''));
-        if ($search !== '') {
-            $needle = mb_strtolower($search);
-            $diffs = array_values(array_filter($diffs, function ($d) use ($needle) {
-                $haystack = mb_strtolower(implode(' ', array(
-                    $d['model'], $d['suffix'], $d['component'], $d['part_number'],
-                    $d['field'], $d['bom_value'], $d['part_list_value'],
-                )));
-
-                return mb_strpos($haystack, $needle) !== false;
-            }));
-        }
-
+        $diffs = $this->filter_diffs_by_search($diffs, $request['search']['value'] ?? '');
         $filtered = count($diffs);
 
         $start = (int) ($request['start'] ?? 0);
@@ -524,6 +712,101 @@ class Part_list_model extends CI_Model
         $page = $length === -1 ? $diffs : array_slice($diffs, $start, $length);
 
         return array('data' => $page, 'filtered' => $filtered, 'total' => $total);
+    }
+
+    /**
+     * Stream the Compare page's diff list as an .xlsx download, honoring
+     * whichever Status filter / Model filter / search text is currently
+     * applied on screen — so "Download Excel" exports exactly what's
+     * visible, not the full unfiltered list.
+     */
+    public function export_compare($status_filter = '', $model_filter = '', $search = '')
+    {
+        $status_labels = array(
+            'only_bom'       => 'Only in Master BOM',
+            'only_part_list' => 'Only in Part List',
+            'mismatch'       => 'Different',
+        );
+
+        $diffs = $this->build_diff();
+        $diffs = $this->filter_diffs_by_status_and_model($diffs, $status_filter, $model_filter);
+        $diffs = $this->filter_diffs_by_search($diffs, $search);
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Compare');
+
+        $headers = array('No', 'Status', 'Model', 'Suffix', 'Component', 'Part Number', 'Field', 'Master BOM Value', 'Part List Value');
+        $sheet->fromArray($headers, null, 'A1');
+        $sheet->getStyle('A1:I1')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A1:I1')->getFill()
+            ->setFillType(Fill::FILL_SOLID)
+            ->getStartColor()->setRGB('1F6FEB');
+
+        foreach (array('D', 'E') as $col) {
+            $sheet->getStyle("{$col}1:{$col}1048576")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
+        }
+
+        $r = 2;
+        foreach ($diffs as $i => $d) {
+            $sheet->setCellValueExplicit("A{$r}", $i + 1, DataType::TYPE_NUMERIC);
+            $sheet->fromArray(array($status_labels[$d['status']] ?? $d['status'], $d['model'], $d['suffix']), null, "B{$r}");
+            $sheet->setCellValueExplicit("D{$r}", $d['component'], DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit("E{$r}", $d['part_number'], DataType::TYPE_STRING);
+            $sheet->fromArray(array($d['field'], $d['bom_value'], $d['part_list_value']), null, "F{$r}");
+            $r++;
+        }
+
+        foreach (range('A', 'I') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $filename = 'part_list_compare_' . date('Ymd_His') . '.xlsx';
+
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: max-age=0');
+
+        $writer = new XlsxWriter($spreadsheet);
+        $writer->save('php://output');
+    }
+
+    protected function filter_diffs_by_status_and_model(array $diffs, $status_filter, $model_filter)
+    {
+        $status_filter = trim((string) $status_filter);
+        if ($status_filter !== '') {
+            $diffs = array_values(array_filter($diffs, function ($d) use ($status_filter) {
+                return $d['status'] === $status_filter;
+            }));
+        }
+
+        $model_filter = trim((string) $model_filter);
+        if ($model_filter !== '') {
+            $diffs = array_values(array_filter($diffs, function ($d) use ($model_filter) {
+                return $d['model'] === $model_filter;
+            }));
+        }
+
+        return $diffs;
+    }
+
+    protected function filter_diffs_by_search(array $diffs, $search)
+    {
+        $search = trim((string) $search);
+        if ($search === '') {
+            return $diffs;
+        }
+
+        $needle = mb_strtolower($search);
+
+        return array_values(array_filter($diffs, function ($d) use ($needle) {
+            $haystack = mb_strtolower(implode(' ', array(
+                $d['model'], $d['suffix'], $d['component'], $d['part_number'],
+                $d['field'], $d['bom_value'], $d['part_list_value'],
+            )));
+
+            return mb_strpos($haystack, $needle) !== false;
+        }));
     }
 
     protected function diff_key(array $row)
@@ -543,11 +826,9 @@ class Part_list_model extends CI_Model
     protected function summarize_row(array $row)
     {
         return sprintf(
-            'Material: %s | Katashiki: %s | Qty: %s | Uom: %s | Shop Code: %s',
-            $row['material'],
-            $row['katashiki'],
+            'Material Description: %s | Qty: %s | Shop Code: %s',
+            $row['material_description'],
             $this->diff_field_value('qty', $row['qty']),
-            $row['uom'],
             $row['shop_code']
         );
     }

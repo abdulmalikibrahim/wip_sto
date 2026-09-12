@@ -67,15 +67,15 @@ CREATE TABLE `bom_upload_log` (
 --
 -- Table structure for table `part_list`
 --
--- Mirrors `bom` (same upload template/columns) so it can be compared
--- against Master BOM to spot data differences.
+-- Uploaded from a wide "pivot" spreadsheet (Part No/Part Name/Shop/Model
+-- + one column per Suffix) so it can be compared against Master BOM to
+-- spot data differences. No Material/Katashiki columns — that pivot
+-- format never carries them.
 --
 
 CREATE TABLE `part_list` (
   `id` bigint NOT NULL,
   `model` varchar(30) DEFAULT NULL,
-  `katashiki` varchar(30) DEFAULT NULL,
-  `material` varchar(50) DEFAULT NULL,
   `suffix` varchar(80) DEFAULT NULL,
   `component` varchar(60) DEFAULT NULL,
   `part_number` varchar(60) DEFAULT NULL,
@@ -237,12 +237,10 @@ ALTER TABLE `bom_upload_log`
 --
 ALTER TABLE `part_list`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_part_list_material` (`material`),
   ADD KEY `idx_part_list_component` (`component`),
   ADD KEY `idx_part_list_part_number` (`part_number`),
   ADD KEY `idx_part_list_shop_code` (`shop_code`),
-  ADD KEY `idx_part_list_model` (`model`),
-  ADD KEY `idx_part_list_katashiki` (`katashiki`);
+  ADD KEY `idx_part_list_model` (`model`);
 
 --
 -- Indexes for table `part_list_upload_log`

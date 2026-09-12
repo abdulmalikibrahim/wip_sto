@@ -208,6 +208,15 @@ class Wip extends MY_Controller
     }
 
     /**
+     * Clear every cutoff VIN for one shop (Weld/Toso/Assy) at once (AJAX
+     * only — the per-shop "Clear" button on the WIP Calc page).
+     */
+    public function kap1_calc_cutoff_clear()
+    {
+        $this->handle_calc_cutoff_clear('kap1');
+    }
+
+    /**
      * "WIP Calc" / "WIP Calc Detail" — KAP2 mirror of the kap1_calc_* methods
      * above. Same views/JS (both are already parameterized by $source), same
      * Wip_calc_model methods, just called with 'kap2'.
@@ -282,6 +291,11 @@ class Wip extends MY_Controller
         $this->handle_calc_cutoff_set('kap2');
     }
 
+    public function kap2_calc_cutoff_clear()
+    {
+        $this->handle_calc_cutoff_clear('kap2');
+    }
+
     /**
      * "WIP Calc. KAP 1 & 2" — KAP1's and KAP2's calc() lists shown together
      * (a plain union, not a re-aggregation), tagged with a Source column so
@@ -341,6 +355,39 @@ class Wip extends MY_Controller
                 'file_name'    => 'Manual entry: ' . $result['part_number'] . ' (' . $result['shop_code'] . ')',
                 'total_rows'   => 1,
                 'applied_rows' => 1,
+                'skipped_rows' => 0,
+                'status'       => 'success',
+                'message'      => $result['message'],
+                'user_id'      => $this->auth_user['id'],
+            ));
+        }
+
+        $this->output
+            ->set_content_type('application/json')
+            ->set_output(json_encode(array(
+                'status'  => $result['ok'] ? 'success' : 'error',
+                'message' => $result['message'],
+            )));
+    }
+
+    /**
+     * Clear all cutoff VINs for one shop within a KAP line (AJAX only —
+     * see the "Clear" button on each shop card on the WIP Calc page).
+     */
+    protected function handle_calc_cutoff_clear($source)
+    {
+        $this->require_admin();
+
+        $this->load->model('Wip_calc_model');
+        $shop = (string) $this->input->post('shop');
+        $result = $this->Wip_calc_model->clear_shop_cutoffs($source, $shop);
+
+        if ($result['ok'] && $result['cleared'] > 0) {
+            $this->Wip_calc_model->log(array(
+                'source'       => $source,
+                'file_name'    => 'Clear cutoff: ' . ($result['shop_code'] ?? $shop),
+                'total_rows'   => $result['cleared'],
+                'applied_rows' => $result['cleared'],
                 'skipped_rows' => 0,
                 'status'       => 'success',
                 'message'      => $result['message'],

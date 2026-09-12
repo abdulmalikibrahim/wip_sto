@@ -72,8 +72,6 @@
                 <thead>
                     <tr>
                         <th>No</th>
-                        <th>Material</th>
-                        <th>Katashiki</th>
                         <th>Model</th>
                         <th>Suffix</th>
                         <th>Component</th>
@@ -143,11 +141,16 @@
 <div class="card">
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
         <span><i class="bi bi-list-check me-1"></i> Differences</span>
-        <div class="btn-group btn-group-sm" id="statusFilter" role="group">
-            <button type="button" class="btn btn-outline-secondary active" data-status="">All</button>
-            <button type="button" class="btn btn-outline-danger" data-status="only_bom">Only in Master BOM</button>
-            <button type="button" class="btn btn-outline-warning" data-status="only_part_list">Only in Part List</button>
-            <button type="button" class="btn btn-outline-info" data-status="mismatch">Different</button>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <div class="btn-group btn-group-sm" id="statusFilter" role="group">
+                <button type="button" class="btn btn-outline-secondary active" data-status="">All</button>
+                <button type="button" class="btn btn-outline-danger" data-status="only_bom">Only in Master BOM</button>
+                <button type="button" class="btn btn-outline-warning" data-status="only_part_list">Only in Part List</button>
+                <button type="button" class="btn btn-outline-info" data-status="mismatch">Different</button>
+            </div>
+            <a href="<?= base_url('part-list/compare/export') ?>" class="btn btn-success btn-sm" id="btnDownloadCompare" title="Download the differences currently shown (respects the Status filter and search box above)">
+                <i class="bi bi-file-earmark-arrow-down me-1"></i> Download Excel
+            </a>
         </div>
     </div>
     <div class="card-body">
@@ -187,9 +190,11 @@
                 </div>
                 <div class="modal-body">
                     <p class="small text-secondary">
-                        File must use the standard template (same as Master BOM): <strong>Material, Katashiki, Model, Suffix, Component, Material Description, Qty, Uom, Shop Code</strong>.
-                        <code>part_number</code> will be generated automatically from <code>Component</code> (trailing "-00" removed).
-                        Shop Code can list more than one shop, separated by commas (e.g. <code>WELD3,ASSY3,TOSO3</code>).
+                        File must use the <a href="<?= base_url('part-list/template') ?>">standard template</a>: <strong>Part No, Part Name, Shop, Model</strong>, followed by one column per <strong>Suffix</strong> — put the Qty in the cell where that part is used at that suffix, leave it blank where it isn't.
+                        <code>part_number</code> is generated automatically from <code>Part No</code> (trailing "-00" removed). Shop can list more than one shop, separated by commas (e.g. <code>WELD3,ASSY3,TOSO3</code>).
+                    </p>
+                    <p class="small text-secondary">
+                        Each Suffix column's Model is looked up from Master BOM automatically (not read from the Model column, which is just free text here) — a Suffix Master BOM doesn't recognize yet is still uploaded, just flagged in the result message. Non-numeric cells (e.g. "X") are skipped and reported, not guessed at.
                     </p>
                     <label class="upload-dropzone d-block mb-3" id="dropzone">
                         <i class="bi bi-file-earmark-excel fs-2 d-block mb-1"></i>

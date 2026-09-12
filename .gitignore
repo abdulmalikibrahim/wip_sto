@@ -10,3 +10,4 @@ Thumbs.db
 /docs/~$*
 /application/config/wip_api_local.php
 /docs/*
+application/config/database.php

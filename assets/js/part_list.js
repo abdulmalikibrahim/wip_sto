@@ -5,8 +5,6 @@
 
     var columns = [
         { data: 'no', orderable: false, searchable: false },
-        { data: 'material' },
-        { data: 'katashiki' },
         { data: 'model' },
         { data: 'suffix' },
         { data: 'component' },
@@ -175,5 +173,18 @@
         $('#statusFilter button').removeClass('active');
         $btn.addClass('active');
         compareTable.ajax.reload();
+    });
+
+    // Download Excel — exports exactly what's currently shown: the active
+    // Status filter button plus whatever's typed in the table's search box.
+    $('#btnDownloadCompare').on('click', function (e) {
+        e.preventDefault();
+        var params = new URLSearchParams();
+        if (currentStatusFilter) params.set('status_filter', currentStatusFilter);
+        var searchTerm = compareTable.search();
+        if (searchTerm) params.set('search', searchTerm);
+        var qs = params.toString();
+        $(this).attr('href', BASE_URL + 'part-list/compare/export' + (qs ? '?' + qs : ''));
+        downloadExcel($(this));
     });
 })(jQuery);

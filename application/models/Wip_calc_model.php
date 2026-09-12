@@ -1214,6 +1214,43 @@ class Wip_calc_model extends CI_Model
     }
 
     /**
+     * Delete every cutoff VIN set for one shop (weld|toso|assy) within a
+     * KAP line — used by the per-shop "Clear" button on the WIP Calc page.
+     * Only the cutoffs are removed; the cached Master WIP data itself
+     * (wip_data) is untouched, so the shop's totals simply fall back to
+     * Gross (every cached unit) for every part until new cutoffs are set.
+     *
+     * @return array{ok:bool, message:string, shop_code?:string, cleared:int}
+     */
+    public function clear_shop_cutoffs($source, $shop)
+    {
+        $shop_codes = $this->config->item('wip_calc_shop_codes')[$source] ?? array();
+        if (!isset($shop_codes[$shop])) {
+            return array('ok' => false, 'message' => 'Unknown Shop for this KAP line.', 'cleared' => 0);
+        }
+        $shop_code = $shop_codes[$shop];
+
+        $cleared = (int) $this->db->where('shop_code', $shop_code)->count_all_results($this->table);
+        if ($cleared === 0) {
+            return array(
+                'ok'        => true,
+                'message'   => "No cutoff VINs were set for {$shop_code}; nothing to clear.",
+                'shop_code' => $shop_code,
+                'cleared'   => 0,
+            );
+        }
+
+        $this->db->where('shop_code', $shop_code)->delete($this->table);
+
+        return array(
+            'ok'        => true,
+            'message'   => "Cleared {$cleared} cutoff VIN(s) for {$shop_code}. That shop's totals now show Gross (every cached unit) until new cutoffs are set.",
+            'shop_code' => $shop_code,
+            'cleared'   => $cleared,
+        );
+    }
+
+    /**
      * Set (or replace) the cutoff VIN for a single part, entered by hand
      * (as opposed to the bulk Excel upload). $shop_raw is matched the same
      * way as the upload's Shop column (label or shop_code), but only shop
