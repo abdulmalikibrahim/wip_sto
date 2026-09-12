@@ -190,11 +190,11 @@
                 </div>
                 <div class="modal-body">
                     <p class="small text-secondary">
-                        File must use the <a href="<?= base_url('part-list/template') ?>">standard template</a>: <strong>Part No, Part Name, Shop, Model</strong>, followed by one column per <strong>Suffix</strong> — put the Qty in the cell where that part is used at that suffix, leave it blank where it isn't.
+                        File must use the <a href="<?= base_url('part-list/template') ?>">standard template</a>'s two-row header: row 1 has <strong>Part No, Part Name, Shop, Model</strong>, then one merged cell per <strong>Model</strong> spanning that model's <strong>Suffix</strong> columns; row 2 has the actual Suffix code under each of those columns. Data starts on row 3 — put the Qty in the cell where that part is used at that suffix, leave it blank where it isn't.
                         <code>part_number</code> is generated automatically from <code>Part No</code> (trailing "-00" removed). Shop can list more than one shop, separated by commas (e.g. <code>WELD3,ASSY3,TOSO3</code>).
                     </p>
                     <p class="small text-secondary">
-                        The <strong>Model</strong> column is used exactly as written for every Suffix on that row (e.g. a part listed under "D55L&amp;D52B&amp;D74A" keeps that combined value, not a single guessed model) — a blank Model is still uploaded, just flagged in the result message. Non-numeric cells (e.g. "X") are skipped and reported, not guessed at.
+                        Each Suffix column's Model comes from the row-1 group it falls under — the per-row <strong>Model</strong> column (a free-text summary like "D55L&amp;D52B&amp;D74A") is kept for reference but isn't used to resolve anything. A Suffix column with no Model group above it is still uploaded, just flagged in the result message. Non-numeric cells (e.g. "X") are skipped and reported, not guessed at.
                     </p>
                     <label class="upload-dropzone d-block mb-3" id="dropzone">
                         <i class="bi bi-file-earmark-excel fs-2 d-block mb-1"></i>

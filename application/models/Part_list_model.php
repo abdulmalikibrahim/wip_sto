@@ -4,6 +4,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx as XlsxWriter;
@@ -14,14 +15,19 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx as XlsxWriter;
  * below.
  *
  * Unlike Master BOM's own upload (one row per Model+Suffix+Component
- * line), Part List's real-world source is a wide "pivot" spreadsheet: one
- * row per part (Part No/Part Name/Shop/Model), one column per Suffix, and
- * the Qty in the cell where that part is used at that suffix — matching
- * the factory's actual "PARTLIST" master file. A row's Model column is
- * taken as-is straight from the file (it can be a single model, e.g.
- * "D52B", or several joined with "&", e.g. "D55L&D52B&D74A") — it is
- * never looked up or second-guessed against Master BOM, so what's in
- * the upload is exactly what ends up in Part List (see parse_excel()).
+ * line), Part List's real-world source is a wide "pivot" spreadsheet
+ * matching the factory's actual "PARTLIST" master file, with a two-row
+ * header: row 1 has Part No/Part Name/Shop/Model (each merged down into
+ * row 2) followed by one merged cell per Model spanning that model's
+ * Suffix columns; row 2 has the actual Suffix code under each of those
+ * columns. Data starts at row 3: one row per part, with the Qty in the
+ * cell where that part is used at that suffix. A suffix column's Model
+ * comes entirely from which merged group it falls under in row 1 — never
+ * looked up or guessed from Master BOM, and not read from the per-row
+ * "Model" column either (that column is just the file's own free-text
+ * summary of every model the part appears in, e.g. "D55L&D52B&D74A" —
+ * ignored for resolution, since row 1's grouping already says exactly
+ * which single model each suffix belongs to; see parse_excel()).
  */
 class Part_list_model extends CI_Model
 {
@@ -131,48 +137,67 @@ class Part_list_model extends CI_Model
     }
 
     /**
-     * Stream the upload template: Part No / Part Name / Shop / Model, then
-     * one column per Suffix currently defined in Master BOM (so the
-     * template always matches whatever suffixes BOM actually has). Falls
-     * back to a couple of placeholder suffix columns when BOM is empty.
+     * Stream the upload template: two header rows — Part No/Part
+     * Name/Shop/Model (merged down both rows) followed by one merged
+     * cell per Model (row 1) spanning that model's Suffix columns (row
+     * 2), built from whatever Model+Suffix combinations Master BOM
+     * currently has. Falls back to one placeholder model/suffix pair
+     * when BOM is empty.
      */
     public function download_template()
     {
-        $suffixes = $this->bom_suffix_columns();
-        if (empty($suffixes)) {
-            $suffixes = array('MN', 'XX'); // placeholders — nothing in Master BOM yet to base real ones on
+        $groups = $this->bom_suffix_groups();
+        if (empty($groups)) {
+            $groups = array(array('model' => 'MODEL', 'suffixes' => array('MN', 'XX'))); // nothing in Master BOM yet to base real ones on
         }
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Part List');
 
-        $headers = array_merge($this->required_headers, $suffixes);
-        $sheet->fromArray($headers, null, 'A1');
-        $lastCol = $this->column_letter(count($headers) - 1);
-        $sheet->getStyle("A1:{$lastCol}1")->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle("A1:{$lastCol}1")->getFill()
+        foreach (array_combine(range('A', 'D'), $this->required_headers) as $col => $label) {
+            $sheet->setCellValue("{$col}1", $label);
+            $sheet->mergeCells("{$col}1:{$col}2");
+        }
+
+        $colIndex = count($this->required_headers); // 0-based, first Suffix column
+        foreach ($groups as $group) {
+            $startCol = $this->column_letter($colIndex);
+            $sheet->setCellValue("{$startCol}1", $group['model']);
+            foreach ($group['suffixes'] as $suffix) {
+                $sheet->setCellValue($this->column_letter($colIndex) . '2', $suffix);
+                $colIndex++;
+            }
+            $endCol = $this->column_letter($colIndex - 1);
+            if ($endCol !== $startCol) {
+                $sheet->mergeCells("{$startCol}1:{$endCol}1");
+            }
+        }
+        $lastCol = $this->column_letter($colIndex - 1);
+
+        $sheet->getStyle("A1:{$lastCol}2")->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle("A1:{$lastCol}2")->getFill()
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('1F6FEB');
+        $sheet->getStyle("A1:{$lastCol}2")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
         // Part No holds long codes (e.g. 9004A-11336-00); keep it as text
         // so Excel never collapses a numeric-looking one into scientific notation.
         $sheet->getStyle('A1:A1048576')->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
 
-        $example = array('9004A-11336-00', 'BOLT, WELD', 'WELD3', 'D26A');
-        $sheet->setCellValueExplicit('A2', $example[0], DataType::TYPE_STRING);
-        $sheet->fromArray(array_slice($example, 1), null, 'B2');
+        // Example data row, now at row 3 (rows 1-2 are the header).
+        $sheet->setCellValueExplicit('A3', '9004A-11336-00', DataType::TYPE_STRING);
+        $sheet->fromArray(array('BOLT, WELD', 'WELD3'), null, 'B3');
         // One example qty in the first suffix column, so the shape is obvious at a glance.
-        $sheet->setCellValue($this->column_letter(count($this->required_headers)) . '2', 1);
+        $sheet->setCellValue($this->column_letter(count($this->required_headers)) . '3', 1);
 
-        $sheet->getColumnDimension('A')->setAutoSize(true);
-        $sheet->getColumnDimension('B')->setAutoSize(true);
-        $sheet->getColumnDimension('C')->setAutoSize(true);
-        $sheet->getColumnDimension('D')->setAutoSize(true);
+        foreach (range('A', 'D') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
         // Autosizing every suffix column individually is slow once there are
         // hundreds of them (see parse_excel()'s note on the real file's
         // size) — a fixed narrow width reads fine for short 2-3 char codes.
-        for ($i = count($this->required_headers); $i < count($headers); $i++) {
+        for ($i = count($this->required_headers); $i < $colIndex; $i++) {
             $sheet->getColumnDimension($this->column_letter($i))->setWidth(6);
         }
 
@@ -185,32 +210,41 @@ class Part_list_model extends CI_Model
     }
 
     /**
-     * Every distinct Suffix currently in Master BOM, in Model then Suffix
-     * order (deduplicated — a Suffix that somehow appears under more than
-     * one Model in BOM is only listed once, at its first occurrence).
+     * Master BOM's own Model+Suffix combinations, grouped by Model (in
+     * Model then Suffix order) — one group per Model, each holding that
+     * Model's distinct Suffixes. A Suffix that somehow appears under more
+     * than one Model in BOM is only listed once, under its first Model.
      */
-    protected function bom_suffix_columns()
+    protected function bom_suffix_groups()
     {
         $rows = $this->db->distinct()->select('model, suffix')
             ->from('bom')
             ->where('suffix !=', null)
             ->where('suffix !=', '')
+            ->where('model !=', null)
+            ->where('model !=', '')
             ->order_by('model', 'asc')
             ->order_by('suffix', 'asc')
             ->get()->result_array();
 
-        $seen = array();
-        $suffixes = array();
+        $seenSuffix = array();
+        $byModel = array();
         foreach ($rows as $row) {
+            $model = trim($row['model']);
             $suffix = trim($row['suffix']);
-            if ($suffix === '' || isset($seen[$suffix])) {
+            if ($suffix === '' || isset($seenSuffix[$suffix])) {
                 continue;
             }
-            $seen[$suffix] = true;
-            $suffixes[] = $suffix;
+            $seenSuffix[$suffix] = true;
+            $byModel[$model][] = $suffix;
         }
 
-        return $suffixes;
+        $groups = array();
+        foreach ($byModel as $model => $suffixes) {
+            $groups[] = array('model' => $model, 'suffixes' => $suffixes);
+        }
+
+        return $groups;
     }
 
     /**
@@ -317,22 +351,22 @@ class Part_list_model extends CI_Model
     }
 
     /**
-     * Parse an uploaded "pivot" Part List file: Part No / Part Name / Shop
-     * / Model, then one column per Suffix (header = the Suffix code, cell
-     * = that part's Qty at that suffix, blank = not used there). A cell
-     * holding 0 is treated the same as blank — a 0 qty means the part
-     * isn't actually used at that suffix, so no row is created for it.
+     * Parse an uploaded "pivot" Part List file with its two-row header:
+     * row 1 has Part No/Part Name/Shop/Model, then one merged cell per
+     * Model spanning that model's Suffix columns; row 2 has the actual
+     * Suffix code under each of those columns. Data starts at row 3: one
+     * row per part, with the Qty in the cell where that part is used at
+     * that suffix (blank = not used there). A cell holding 0 is treated
+     * the same as blank — a 0 qty means the part isn't actually used at
+     * that suffix, so no row is created for it.
      *
-     * Every suffix on a row gets that row's own Model column value, taken
-     * as-is — never looked up or guessed from Master BOM. If the file
-     * says "D55L&D52B&D74A" for this part, that's what lands in Part
-     * List for every one of its suffixes; if it says just "D52B", that's
-     * what lands. This means a multi-model row won't line up with any of
-     * Master BOM's single-model rows under the Compare page's Model+
-     * Suffix+Part Number key (it'll show as "Only in Part List" there),
-     * which is an accepted trade-off — Part List always mirrors the
-     * upload file exactly, rather than the code substituting its own
-     * guess at which single model a given suffix "really" belongs to.
+     * A suffix column's Model comes entirely from row 1's merged grouping
+     * — never looked up or guessed from Master BOM, and not read from the
+     * per-row "Model" column either (that's just the file's own free-text
+     * summary of every model the part appears in, e.g. "D55L&D52B&D74A",
+     * kept in the file for reference but not used to resolve anything
+     * here — row 1's grouping already says exactly which single model
+     * each suffix belongs to).
      *
      * A cell holding a non-numeric marker (the real file uses "X") is
      * skipped, not guessed at — counted in $skipped_non_numeric instead so
@@ -383,17 +417,22 @@ class Part_list_model extends CI_Model
         $highestRow = $sheet->getHighestDataRow();
         $highestCol = $sheet->getHighestDataColumn();
 
-        // ---- Header row: fixed 4 columns, then one Suffix per column
-        // after that (blank-header columns are just skipped, not errors —
-        // the real file has stray blank trailing columns). ----
-        $headerCells = array();
-        $cellIterator = $sheet->getRowIterator(1, 1)->current()->getCellIterator('A', $highestCol);
-        $cellIterator->setIterateOnlyExistingCells(false);
-        foreach ($cellIterator as $cell) {
-            $headerCells[] = $cell->getValue();
+        // ---- Header: two rows. Row 1 = Part No/Part Name/Shop/Model
+        // (merged down into row 2) then one merged cell per Model spanning
+        // that model's Suffix columns; row 2 = the Suffix code under each
+        // of those columns. A Suffix column's Model is whichever row-1
+        // value was last seen at or before it — i.e. forward-filled across
+        // the merge, which works whether or not the merge metadata itself
+        // is intact, since a merged cell only ever stores its value in the
+        // top-left cell either way. ----
+        $row1Cells = array();
+        $it1 = $sheet->getRowIterator(1, 1)->current()->getCellIterator('A', $highestCol);
+        $it1->setIterateOnlyExistingCells(false);
+        foreach ($it1 as $cell) {
+            $row1Cells[] = $cell->getValue();
         }
 
-        if (!$this->header_matches($headerCells)) {
+        if (!$this->header_matches($row1Cells)) {
             // A real pivot file (Part No/Part Name/Shop/Model + many Suffix
             // columns) that comes back with only 1 row / column A detected
             // isn't a bad template — the sheet failed to load at all
@@ -410,21 +449,34 @@ class Part_list_model extends CI_Model
 
             return array(
                 'ok' => false,
-                'message' => 'Invalid template. Expected the first columns to be: ' . implode(', ', $this->required_headers) . ', followed by one column per Suffix.',
+                'message' => 'Invalid template. Expected the first row to start with: ' . implode(', ', $this->required_headers) . ', followed by one merged cell per Model spanning that Model\'s Suffix columns.',
             );
         }
 
+        $row2Cells = array();
+        $it2 = $sheet->getRowIterator(2, 2)->current()->getCellIterator('A', $highestCol);
+        $it2->setIterateOnlyExistingCells(false);
+        foreach ($it2 as $cell) {
+            $row2Cells[] = $cell->getValue();
+        }
+
         $prefixCount = count($this->required_headers);
-        $suffixColumns = array(); // column index (0-based) => suffix code
-        for ($i = $prefixCount; $i < count($headerCells); $i++) {
-            $suffix = trim((string) ($headerCells[$i] ?? ''));
+        $suffixColumns = array(); // column index (0-based) => ['suffix' => ..., 'model' => ...]
+        $currentModel = '';
+        for ($i = $prefixCount; $i < count($row1Cells); $i++) {
+            $modelCell = trim((string) ($row1Cells[$i] ?? ''));
+            if ($modelCell !== '') {
+                $currentModel = $modelCell; // start of a new Model's merged group
+            }
+
+            $suffix = trim((string) ($row2Cells[$i] ?? ''));
             if ($suffix !== '') {
-                $suffixColumns[$i] = $suffix;
+                $suffixColumns[$i] = array('suffix' => $suffix, 'model' => $currentModel);
             }
         }
 
         if (empty($suffixColumns)) {
-            return array('ok' => false, 'message' => 'No Suffix columns found after Part No/Part Name/Shop/Model.');
+            return array('ok' => false, 'message' => 'No Suffix columns found in row 2 after Part No/Part Name/Shop/Model.');
         }
 
         // Keyed by "COMPONENT|SUFFIX|MODEL" (upper-cased) so a genuine
@@ -435,7 +487,8 @@ class Part_list_model extends CI_Model
         $unresolved_suffix_set = array();
         $unresolved_cells = 0;
 
-        foreach ($sheet->getRowIterator(2, $highestRow) as $row) {
+        // Rows 1-2 are the header; data starts at row 3.
+        foreach ($sheet->getRowIterator(3, $highestRow) as $row) {
             $partNo = trim((string) $sheet->getCell('A' . $row->getRowIndex())->getValue());
             if ($partNo === '') {
                 continue; // no Part No -> not a real data row (e.g. leftover formula debris rows)
@@ -444,12 +497,10 @@ class Part_list_model extends CI_Model
             $partName = trim((string) $sheet->getCell('B' . $row->getRowIndex())->getValue());
             $shopCode = $this->normalize_shop_code($sheet->getCell('C' . $row->getRowIndex())->getValue());
 
-            // Taken as-is from the file, whatever it says — single model
-            // or several joined with "&" — never looked up against Master
-            // BOM. Same value for every suffix on this row.
-            $rowModel = trim((string) $sheet->getCell('D' . $row->getRowIndex())->getValue());
+            foreach ($suffixColumns as $colIndex => $colInfo) {
+                $suffix = $colInfo['suffix'];
+                $model = $colInfo['model'];
 
-            foreach ($suffixColumns as $colIndex => $suffix) {
                 $colLetter = $this->column_letter($colIndex);
                 $value = $sheet->getCell($colLetter . $row->getRowIndex())->getValue();
                 if ($value === null || $value === '') {
@@ -466,12 +517,12 @@ class Part_list_model extends CI_Model
                     continue; // a 0 qty means the part isn't actually used at this suffix — treat like blank
                 }
 
-                if ($rowModel === '') {
+                if ($model === '') {
                     $unresolved_suffix_set[$suffix] = true;
                     $unresolved_cells++;
                 }
 
-                $key = strtoupper($partNo) . '|' . strtoupper($suffix) . '|' . strtoupper($rowModel);
+                $key = strtoupper($partNo) . '|' . strtoupper($suffix) . '|' . strtoupper($model);
                 if (isset($acc[$key])) {
                     $duplicates_collapsed++;
                     if ($qty > $acc[$key]['qty']) {
@@ -481,7 +532,7 @@ class Part_list_model extends CI_Model
                 }
 
                 $acc[$key] = array(
-                    'model'                => $rowModel,
+                    'model'                => $model,
                     'suffix'               => $suffix,
                     'component'            => $partNo,
                     'material_description' => $partName,

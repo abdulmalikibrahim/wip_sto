@@ -96,7 +96,8 @@ class Part_list extends MY_Controller
     }
 
     /**
-     * Download the Excel upload template (same layout as Master BOM's).
+     * Download the Excel upload template (the pivot layout — see
+     * Part_list_model::download_template()).
      */
     public function template()
     {
