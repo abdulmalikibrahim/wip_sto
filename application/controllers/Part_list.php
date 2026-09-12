@@ -192,7 +192,10 @@ class Part_list extends MY_Controller
             $notes[] = "{$parsed['blank_model_cells']} cell(s) across {$count} Suffix column(s) had a blank Model in the uploaded file: {$sample}{$more}.";
         }
 
-        $message = "Part List uploaded: {$result['inserted']} rows inserted, {$result['skipped']} skipped.";
+        $message = "Part List uploaded: {$result['inserted']} rows inserted, {$result['updated']} updated, {$result['skipped']} skipped.";
+        if ($result['updated'] > 0) {
+            $notes[] = "Rows already present (same Model + Suffix + Part Number + Shop Code) were refreshed in place rather than added again.";
+        }
         if ($notes) {
             $message .= ' ' . implode(' ', $notes);
         }

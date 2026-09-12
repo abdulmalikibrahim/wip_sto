@@ -578,12 +578,32 @@ class Part_list_model extends CI_Model
      *
      * @return array{inserted:int, skipped:int}
      */
+    /**
+     * Write uploaded rows, refreshing any row that already exists instead of
+     * adding a second copy of it.
+     *
+     * A row's identity is (model, suffix, part_number, shop_code) — the
+     * `uniq_part_list_row` key. shop_code belongs in that key because the
+     * same part+model+suffix legitimately appears in different shops with
+     * different quantities, so only a row matching on all four is the same
+     * row. Everything else (description, qty, uom, component) is refreshed
+     * from the file, so re-uploading a corrected sheet updates in place.
+     *
+     * This is what makes "expand" mode safe to run twice, and to run over
+     * the KAP1 and KAP2 sheets whose contents overlap: before it, each
+     * upload appended duplicates, and WIP Calc on the Part List basis then
+     * counted a duplicated part's usage once per copy.
+     *
+     * @return array{inserted:int, updated:int, skipped:int}
+     */
     public function insert_rows(array $rows)
     {
-        $inserted = 0;
         $skipped = 0;
+        $written = 0;
         $now = date('Y-m-d H:i:s');
         $batch = array();
+
+        $before = $this->count_all();
 
         foreach ($rows as $row) {
             if ($row['component'] === '' || $row['shop_code'] === '') {
@@ -605,18 +625,59 @@ class Part_list_model extends CI_Model
             );
 
             if (count($batch) >= 500) {
-                $this->db->insert_batch($this->table, $batch);
-                $inserted += count($batch);
+                $this->upsert_batch($batch);
+                $written += count($batch);
                 $batch = array();
             }
         }
 
         if (!empty($batch)) {
-            $this->db->insert_batch($this->table, $batch);
-            $inserted += count($batch);
+            $this->upsert_batch($batch);
+            $written += count($batch);
         }
 
-        return array('inserted' => $inserted, 'skipped' => $skipped);
+        // A row that was already there leaves the table size unchanged, so the
+        // growth is the insert count and the rest were updates — cheaper than
+        // asking the database about every single row.
+        $inserted = max(0, $this->count_all() - $before);
+
+        return array('inserted' => $inserted, 'updated' => max(0, $written - $inserted), 'skipped' => $skipped);
+    }
+
+    /**
+     * One multi-row INSERT ... ON DUPLICATE KEY UPDATE. CI3's insert_batch()
+     * can't express the upsert, so the statement is built here — values still
+     * go through the query builder's escaping, never string interpolation.
+     *
+     * `created_at` is deliberately left alone on update, so a refreshed row
+     * keeps the date it first arrived.
+     */
+    protected function upsert_batch(array $batch)
+    {
+        if (empty($batch)) {
+            return;
+        }
+
+        $columns = array_keys($batch[0]);
+        $tuples = array();
+        foreach ($batch as $row) {
+            $values = array();
+            foreach ($columns as $column) {
+                $values[] = $this->db->escape($row[$column]);
+            }
+            $tuples[] = '(' . implode(',', $values) . ')';
+        }
+
+        $updates = array();
+        foreach (array('component', 'material_description', 'qty', 'uom', 'updated_at') as $column) {
+            $updates[] = "`{$column}` = VALUES(`{$column}`)";
+        }
+
+        $this->db->query(
+            'INSERT INTO `' . $this->table . '` (`' . implode('`,`', $columns) . '`) VALUES '
+            . implode(',', $tuples)
+            . ' ON DUPLICATE KEY UPDATE ' . implode(', ', $updates)
+        );
     }
 
     public function log_upload($data)
