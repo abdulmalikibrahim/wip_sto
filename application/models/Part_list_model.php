@@ -323,13 +323,17 @@ class Part_list_model extends CI_Model
      * holding 0 is treated the same as blank — a 0 qty means the part
      * isn't actually used at that suffix, so no row is created for it.
      *
-     * Each Suffix's Model is resolved from Master BOM's own Suffix->Model
-     * data (see resolve_model_for_suffix()) — not from this file's own
-     * free-text Model column — since that's the only way the row becomes
-     * comparable to BOM under the same Model+Suffix+Part Number key. A
-     * suffix BOM doesn't know about yet is still recorded, just with a
-     * blank Model (it'll surface as "Only in Part List" on the Compare
-     * page, which is the point — it flags something to go check).
+     * Each Suffix's Model is resolved in one of two ways, so the row
+     * becomes comparable to a BOM row under the same Model+Suffix+Part
+     * Number key: if the row's own Model column names just ONE model
+     * (not a "&"-joined multi-model list), that's used directly for every
+     * suffix on the row — it's unambiguous and more reliable than a
+     * BOM-wide guess. Otherwise (multi-model rows, where the file's own
+     * text can't say which model a given suffix belongs to), it falls
+     * back to Master BOM's own Suffix->Model data. A suffix that still
+     * can't be resolved either way is recorded with a blank Model (it'll
+     * surface as "Only in Part List" on the Compare page, which is the
+     * point — it flags something to go check).
      *
      * A cell holding a non-numeric marker (the real file uses "X") is
      * skipped, not guessed at — counted in $skipped_non_numeric instead so
@@ -443,6 +447,17 @@ class Part_list_model extends CI_Model
             $partName = trim((string) $sheet->getCell('B' . $row->getRowIndex())->getValue());
             $shopCode = $this->normalize_shop_code($sheet->getCell('C' . $row->getRowIndex())->getValue());
 
+            // A row's own Model column is free text (e.g. "D55L&D52B&D74A"
+            // when the part spans several models) — unusable per-suffix in
+            // that case. But when it names just ONE model, it's the most
+            // reliable source there is: use it directly for every suffix
+            // on this row instead of falling back to the (incomplete)
+            // Master BOM suffix lookup, which otherwise leaves a real part
+            // with a blank Model just because BOM doesn't cover that
+            // particular suffix yet.
+            $rowModelRaw = trim((string) $sheet->getCell('D' . $row->getRowIndex())->getValue());
+            $rowSingleModel = ($rowModelRaw !== '' && strpos($rowModelRaw, '&') === false) ? $rowModelRaw : '';
+
             foreach ($suffixColumns as $colIndex => $suffix) {
                 $colLetter = $this->column_letter($colIndex);
                 $value = $sheet->getCell($colLetter . $row->getRowIndex())->getValue();
@@ -460,7 +475,7 @@ class Part_list_model extends CI_Model
                     continue; // a 0 qty means the part isn't actually used at this suffix — treat like blank
                 }
 
-                $model = $suffix_model_map[strtoupper($suffix)] ?? '';
+                $model = $rowSingleModel !== '' ? $rowSingleModel : ($suffix_model_map[strtoupper($suffix)] ?? '');
                 if ($model === '') {
                     $unresolved_suffix_set[$suffix] = true;
                     $unresolved_cells++;
