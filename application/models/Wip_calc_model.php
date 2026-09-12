@@ -690,7 +690,7 @@ class Wip_calc_model extends CI_Model
      * styled header, zebra-striped rows, a Grand Total row, print setup
      * (landscape, header repeated on every page) — straight to the browser.
      */
-    public function export($source, $title, $hide_zero = false)
+    public function export($source, $title, $hide_zero = false, $shop_filter = '')
     {
         $result = $this->calc($source);
         if (!$result['ok']) {
@@ -710,6 +710,16 @@ class Wip_calc_model extends CI_Model
         $shop_codes = $this->config->item('wip_calc_shop_codes')[$source] ?? array();
         $shop_labels = $this->config->item('wip_shop_labels');
         $shop_keys = array_keys($shop_codes);
+
+        // Same shop-card filter as the on-screen table (a BOM Shop Code
+        // substring match, not a column filter) — so the download matches
+        // whatever's currently shown when a shop card is active.
+        if ($shop_filter !== '' && isset($shop_codes[$shop_filter])) {
+            $needle = strtoupper($shop_codes[$shop_filter]);
+            $result['data'] = array_values(array_filter($result['data'], function ($row) use ($needle) {
+                return strpos(strtoupper($row['shop_code']), $needle) !== false;
+            }));
+        }
 
         // Every shop, plus the Total column, gets a Gross/Cutoff breakdown —
         // unlike the on-screen table (where it's behind a toggle), the

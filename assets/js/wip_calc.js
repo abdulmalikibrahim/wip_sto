@@ -113,6 +113,7 @@
             $('#calcShopFilterBadge').addClass('d-none');
         }
         table.draw();
+        updateExportHref();
     }
 
     $('#cutoffStatus').on('click', '[data-cutoff-shop]', function () {
@@ -171,8 +172,15 @@
         });
     });
 
+    // Keeps "Download Excel" in sync with both the Hide Zero toggle and
+    // whichever shop card filter is active, so the file matches what's
+    // currently shown on screen.
     function updateExportHref() {
-        $btnExportCalc.attr('href', hideZeroRows ? (exportBaseHref + '?hide_zero=1') : exportBaseHref);
+        var params = new URLSearchParams();
+        if (hideZeroRows) params.set('hide_zero', '1');
+        if (activeShopFilter) params.set('shop_filter', activeShopFilter);
+        var qs = params.toString();
+        $btnExportCalc.attr('href', exportBaseHref + (qs ? '?' + qs : ''));
     }
 
     $btnToggleHideZero.on('click', function () {

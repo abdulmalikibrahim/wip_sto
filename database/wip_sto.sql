@@ -223,7 +223,10 @@ ALTER TABLE `bom`
   ADD KEY `idx_bom_part_number` (`part_number`),
   ADD KEY `idx_bom_shop_code` (`shop_code`),
   ADD KEY `idx_bom_model` (`model`),
-  ADD KEY `idx_bom_katashiki` (`katashiki`);
+  ADD KEY `idx_bom_katashiki` (`katashiki`),
+  -- Speeds up Part_list_model::build_diff()'s Model+Suffix+Part Number
+  -- join against `part_list` (see idx_part_list_msp below).
+  ADD KEY `idx_bom_msp` (`model`, `suffix`, `part_number`);
 
 --
 -- Indexes for table `bom_upload_log`
@@ -240,7 +243,11 @@ ALTER TABLE `part_list`
   ADD KEY `idx_part_list_component` (`component`),
   ADD KEY `idx_part_list_part_number` (`part_number`),
   ADD KEY `idx_part_list_shop_code` (`shop_code`),
-  ADD KEY `idx_part_list_model` (`model`);
+  ADD KEY `idx_part_list_model` (`model`),
+  -- Speeds up Part_list_model::build_diff()'s Model+Suffix+Part Number
+  -- join against `bom` (see idx_bom_msp above) — without this, that join
+  -- took 20+ seconds on the real ~150k/180k-row tables.
+  ADD KEY `idx_part_list_msp` (`model`, `suffix`, `part_number`);
 
 --
 -- Indexes for table `part_list_upload_log`

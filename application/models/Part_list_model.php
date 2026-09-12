@@ -589,61 +589,130 @@ class Part_list_model extends CI_Model
      * difference: a part only present on one side, or one field that
      * disagrees between the two sides for a part present on both.
      *
+     * The matching/comparison runs in MySQL (a JOIN, not two PHP
+     * hashmaps) — an earlier version pulled the full `bom` (~146k rows)
+     * and `part_list` (~180k+ rows once uploaded from the pivot format)
+     * into PHP arrays on every call, which is what caused a fatal
+     * "Out of memory" on a more memory-constrained server. This way only
+     * genuine differences (a small fraction of the total) ever reach PHP.
+     *
+     * `bom` itself can have more than one row sharing the same
+     * Model+Suffix+Part Number (different Material codes on the same
+     * part/suffix) — summed here, the same way WIP Calc already treats
+     * multiple BOM lines for one part_number as additive usage, rather
+     * than silently keeping only one of them.
+     *
      * @return array list of rows: status, model, suffix, component, part_number, field, bom_value, part_list_value
      */
     public function build_diff()
     {
-        // Pulls the full `bom` (100k+ rows) and `part_list` tables into PHP
-        // on every call — same headroom concern as parse_excel() once
-        // Part List holds pivot-scale data (a wide upload can add 100k+
-        // rows on its own). See that method's comment for why this is
-        // raised per-action instead of globally.
         $current = $this->to_bytes(ini_get('memory_limit'));
-        if ($current !== -1 && $current < 1024 * 1024 * 1024) {
-            @ini_set('memory_limit', '1024M');
+        if ($current !== -1 && $current < 512 * 1024 * 1024) {
+            @ini_set('memory_limit', '512M');
         }
 
-        // `part_list` no longer has material/katashiki columns (the pivot
-        // upload format never carried real data for them) — this list is
-        // shared for both tables, so it only names columns both have.
-        $cols = 'model, suffix, component, part_number, material_description, qty, uom, shop_code';
-
-        $bom_rows = $this->db->select($cols)->from('bom')->get()->result_array();
-        $part_list_rows = $this->db->select($cols)->from($this->table)->get()->result_array();
-
-        $bom_by_key = array();
-        foreach ($bom_rows as $row) {
-            $bom_by_key[$this->diff_key($row)] = $row;
-        }
-
-        $part_list_by_key = array();
-        foreach ($part_list_rows as $row) {
-            $part_list_by_key[$this->diff_key($row)] = $row;
-        }
+        $this->db->query('DROP TEMPORARY TABLE IF EXISTS tmp_bom_agg');
+        $this->db->query('
+            CREATE TEMPORARY TABLE tmp_bom_agg (
+                model VARCHAR(30), suffix VARCHAR(80), part_number VARCHAR(60),
+                component VARCHAR(60), material_description VARCHAR(255),
+                qty DECIMAL(14,3), shop_code VARCHAR(100),
+                PRIMARY KEY (model, suffix, part_number)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+        ');
+        $this->db->query('
+            INSERT INTO tmp_bom_agg
+            SELECT model, suffix, part_number,
+                   MIN(component), MIN(material_description), SUM(qty), MIN(shop_code)
+            FROM bom
+            GROUP BY model, suffix, part_number
+        ');
 
         $diffs = array();
 
-        foreach ($bom_by_key as $key => $bom_row) {
-            if (!isset($part_list_by_key[$key])) {
-                $diffs[] = $this->diff_row('only_bom', $bom_row, null, '(New Part)', $this->summarize_row($bom_row), '-');
-                continue;
-            }
+        $only_bom = $this->db->query('
+            SELECT b.model, b.suffix, b.component, b.part_number,
+                   b.material_description AS b_desc, b.qty AS b_qty, b.shop_code AS b_shop
+            FROM tmp_bom_agg b
+            LEFT JOIN part_list p ON b.model = p.model AND b.suffix = p.suffix AND b.part_number = p.part_number
+            WHERE p.id IS NULL
+        ')->result_array();
+        foreach ($only_bom as $row) {
+            $diffs[] = array(
+                'status'          => 'only_bom',
+                'model'           => $row['model'],
+                'suffix'          => $row['suffix'],
+                'component'       => $row['component'],
+                'part_number'     => $row['part_number'],
+                'field'           => '(New Part)',
+                'bom_value'       => $this->summarize_fields($row['b_desc'], $row['b_qty'], $row['b_shop']),
+                'part_list_value' => '-',
+            );
+        }
 
-            $part_list_row = $part_list_by_key[$key];
+        $only_part_list = $this->db->query('
+            SELECT p.model, p.suffix, p.component, p.part_number,
+                   p.material_description AS p_desc, p.qty AS p_qty, p.shop_code AS p_shop
+            FROM part_list p
+            LEFT JOIN tmp_bom_agg b ON b.model = p.model AND b.suffix = p.suffix AND b.part_number = p.part_number
+            WHERE b.part_number IS NULL
+        ')->result_array();
+        foreach ($only_part_list as $row) {
+            $diffs[] = array(
+                'status'          => 'only_part_list',
+                'model'           => $row['model'],
+                'suffix'          => $row['suffix'],
+                'component'       => $row['component'],
+                'part_number'     => $row['part_number'],
+                'field'           => '(New Part)',
+                'bom_value'       => '-',
+                'part_list_value' => $this->summarize_fields($row['p_desc'], $row['p_qty'], $row['p_shop']),
+            );
+        }
+
+        // Present on both sides, but Qty/Shop Code/Material Description
+        // disagree — the WHERE clause is a cheap pre-filter to shrink what
+        // MySQL sends back; diff_field_value() (trim()-based, case
+        // sensitive) still makes the final per-field call in PHP below,
+        // so a WHERE clause false-positive (e.g. whitespace-only) just
+        // means a candidate row that turns out to have no real diff.
+        $mismatch_candidates = $this->db->query("
+            SELECT b.model, b.suffix, b.component, b.part_number,
+                   b.material_description AS b_desc, b.qty AS b_qty, b.shop_code AS b_shop,
+                   p.material_description AS p_desc, p.qty AS p_qty, p.shop_code AS p_shop
+            FROM tmp_bom_agg b
+            INNER JOIN part_list p ON b.model = p.model AND b.suffix = p.suffix AND b.part_number = p.part_number
+            WHERE b.qty <> p.qty
+               OR COALESCE(b.shop_code,'') COLLATE utf8mb4_bin <> COALESCE(p.shop_code,'') COLLATE utf8mb4_bin
+               OR COALESCE(b.material_description,'') COLLATE utf8mb4_bin <> COALESCE(p.material_description,'') COLLATE utf8mb4_bin
+        ")->result_array();
+
+        $field_cols = array(
+            'qty'                  => array('b_qty', 'p_qty'),
+            'shop_code'            => array('b_shop', 'p_shop'),
+            'material_description' => array('b_desc', 'p_desc'),
+        );
+        foreach ($mismatch_candidates as $row) {
             foreach ($this->compare_fields as $field => $label) {
-                $bom_value = $this->diff_field_value($field, $bom_row[$field]);
-                $part_list_value = $this->diff_field_value($field, $part_list_row[$field]);
+                list($bCol, $pCol) = $field_cols[$field];
+                $bom_value = $this->diff_field_value($field, $row[$bCol]);
+                $part_list_value = $this->diff_field_value($field, $row[$pCol]);
                 if ($bom_value !== $part_list_value) {
-                    $diffs[] = $this->diff_row('mismatch', $bom_row, $part_list_row, $label, $bom_value, $part_list_value);
+                    $diffs[] = array(
+                        'status'          => 'mismatch',
+                        'model'           => $row['model'],
+                        'suffix'          => $row['suffix'],
+                        'component'       => $row['component'],
+                        'part_number'     => $row['part_number'],
+                        'field'           => $label,
+                        'bom_value'       => $bom_value,
+                        'part_list_value' => $part_list_value,
+                    );
                 }
             }
         }
 
-        foreach ($part_list_by_key as $key => $part_list_row) {
-            if (!isset($bom_by_key[$key])) {
-                $diffs[] = $this->diff_row('only_part_list', null, $part_list_row, '(New Part)', '-', $this->summarize_row($part_list_row));
-            }
-        }
+        $this->db->query('DROP TEMPORARY TABLE IF EXISTS tmp_bom_agg');
 
         usort($diffs, function ($a, $b) {
             foreach (array('model', 'suffix', 'part_number', 'field') as $key) {
@@ -657,6 +726,16 @@ class Part_list_model extends CI_Model
         });
 
         return $diffs;
+    }
+
+    protected function summarize_fields($description, $qty, $shop_code)
+    {
+        return sprintf(
+            'Material Description: %s | Qty: %s | Shop Code: %s',
+            $description,
+            $this->diff_field_value('qty', $qty),
+            $shop_code
+        );
     }
 
     /**
@@ -809,11 +888,6 @@ class Part_list_model extends CI_Model
         }));
     }
 
-    protected function diff_key(array $row)
-    {
-        return $row['model'] . '|' . $row['suffix'] . '|' . $row['part_number'];
-    }
-
     protected function diff_field_value($field, $value)
     {
         if ($field === 'qty') {
@@ -821,31 +895,5 @@ class Part_list_model extends CI_Model
         }
 
         return trim((string) $value);
-    }
-
-    protected function summarize_row(array $row)
-    {
-        return sprintf(
-            'Material Description: %s | Qty: %s | Shop Code: %s',
-            $row['material_description'],
-            $this->diff_field_value('qty', $row['qty']),
-            $row['shop_code']
-        );
-    }
-
-    protected function diff_row($status, $bom_row, $part_list_row, $field, $bom_value, $part_list_value)
-    {
-        $source = $bom_row ?: $part_list_row;
-
-        return array(
-            'status'           => $status,
-            'model'            => $source['model'],
-            'suffix'           => $source['suffix'],
-            'component'        => $source['component'],
-            'part_number'      => $source['part_number'],
-            'field'            => $field,
-            'bom_value'        => $bom_value,
-            'part_list_value'  => $part_list_value,
-        );
     }
 }

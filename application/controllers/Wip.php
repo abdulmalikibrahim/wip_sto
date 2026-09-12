@@ -134,7 +134,8 @@ class Wip extends MY_Controller
     {
         $this->load->model('Wip_calc_model');
         $hide_zero = $this->input->get('hide_zero') === '1';
-        $this->Wip_calc_model->export('kap1', 'WIP Calc - KAP 1', $hide_zero);
+        $shop_filter = (string) $this->input->get('shop_filter');
+        $this->Wip_calc_model->export('kap1', 'WIP Calc - KAP 1', $hide_zero, $shop_filter);
     }
 
     /**
@@ -247,7 +248,8 @@ class Wip extends MY_Controller
     {
         $this->load->model('Wip_calc_model');
         $hide_zero = $this->input->get('hide_zero') === '1';
-        $this->Wip_calc_model->export('kap2', 'WIP Calc - KAP 2', $hide_zero);
+        $shop_filter = (string) $this->input->get('shop_filter');
+        $this->Wip_calc_model->export('kap2', 'WIP Calc - KAP 2', $hide_zero, $shop_filter);
     }
 
     public function kap2_calc_detail()
