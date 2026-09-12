@@ -311,42 +311,85 @@
     });
 
     // Add Cutoff VIN modal — single entry, AJAX only, no page reload.
+    // The "Apply to ALL parts in this shop" switch skips the Part Number
+    // field entirely and posts to /calc/cutoff/shop instead, so one VIN
+    // gets applied to every part_number that uses that shop's Shop Code.
     var $formSetCutoff = $('#formSetCutoff');
     var $setCutoffAlert = $('#setCutoffAlert');
     var $btnSaveCutoff = $('#btnSaveCutoff');
+    var $cutoffApplyAll = $('#cutoffApplyAll');
+    var $cutoffPartNumberGroup = $('#cutoffPartNumberGroup');
+    var $cutoffPartNumber = $('#cutoffPartNumber');
+
+    function applyAllToggled() {
+        var applyAll = $cutoffApplyAll.is(':checked');
+        $cutoffPartNumberGroup.toggleClass('d-none', applyAll);
+        $cutoffPartNumber.prop('required', !applyAll);
+    }
+
+    $cutoffApplyAll.on('change', applyAllToggled);
 
     $('#modalSetCutoff').on('shown.bs.modal', function () {
         $setCutoffAlert.addClass('d-none').text('');
+        $cutoffApplyAll.prop('checked', false);
+        applyAllToggled();
         $('#cutoffPartNumber').trigger('focus');
     });
 
     $formSetCutoff.on('submit', function (e) {
         e.preventDefault();
         $setCutoffAlert.addClass('d-none').text('');
-        $btnSaveCutoff.prop('disabled', true);
 
-        $.post(BASE_URL + WIP_CALC_SOURCE + '/calc/cutoff', {
-            shop_code: $('#cutoffShopCode').val(),
-            part_number: $('#cutoffPartNumber').val(),
-            vin: $('#cutoffVin').val()
-        }, null, 'json')
-            .done(function (resp) {
-                if (resp.status !== 'success') {
-                    $setCutoffAlert.removeClass('d-none').text(resp.message || 'Failed to save cutoff VIN.');
-                    return;
-                }
-                toast('success', resp.message || 'Cutoff VIN saved.');
-                $formSetCutoff[0].reset();
-                bootstrap.Modal.getOrCreateInstance('#modalSetCutoff').hide();
-                load();
-            })
-            .fail(function (xhr) {
-                var msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Failed to reach the server.';
-                $setCutoffAlert.removeClass('d-none').text(msg);
-            })
-            .always(function () {
-                $btnSaveCutoff.prop('disabled', false);
-            });
+        var applyAll = $cutoffApplyAll.is(':checked');
+        var vin = $('#cutoffVin').val();
+
+        function save() {
+            $btnSaveCutoff.prop('disabled', true);
+
+            var url = applyAll ? '/calc/cutoff/shop' : '/calc/cutoff';
+            var payload = applyAll
+                ? { shop: $('#cutoffShopCode option:selected').data('shop-key'), vin: vin }
+                : { shop_code: $('#cutoffShopCode').val(), part_number: $cutoffPartNumber.val(), vin: vin };
+
+            $.post(BASE_URL + WIP_CALC_SOURCE + url, payload, null, 'json')
+                .done(function (resp) {
+                    if (resp.status !== 'success') {
+                        $setCutoffAlert.removeClass('d-none').text(resp.message || 'Failed to save cutoff VIN.');
+                        return;
+                    }
+                    toast('success', resp.message || 'Cutoff VIN saved.');
+                    $formSetCutoff[0].reset();
+                    applyAllToggled();
+                    bootstrap.Modal.getOrCreateInstance('#modalSetCutoff').hide();
+                    load();
+                })
+                .fail(function (xhr) {
+                    var msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Failed to reach the server.';
+                    $setCutoffAlert.removeClass('d-none').text(msg);
+                })
+                .always(function () {
+                    $btnSaveCutoff.prop('disabled', false);
+                });
+        }
+
+        if (!applyAll) {
+            save();
+            return;
+        }
+
+        var shopLabel = $('#cutoffShopCode option:selected').text().trim();
+        Swal.fire({
+            title: 'Apply this VIN to ALL ' + shopLabel + ' parts?',
+            html: 'This sets <strong>' + esc(vin) + '</strong> as the cutoff VIN for every part currently listed under this shop, replacing any cutoff they already have.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Apply to all',
+            confirmButtonColor: '#dc3545',
+            background: '#21262f',
+            color: '#e4e6eb'
+        }).then(function (res) {
+            if (res.isConfirmed) save();
+        });
     });
 
     load();

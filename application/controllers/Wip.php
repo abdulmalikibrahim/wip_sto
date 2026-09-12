@@ -218,6 +218,16 @@ class Wip extends MY_Controller
     }
 
     /**
+     * Set the same cutoff VIN for every part in one shop at once (AJAX only
+     * — the "Apply to ALL parts in this shop" option in the "Add Cutoff
+     * VIN" modal).
+     */
+    public function kap1_calc_cutoff_set_shop()
+    {
+        $this->handle_calc_cutoff_set_shop('kap1');
+    }
+
+    /**
      * "WIP Calc" / "WIP Calc Detail" — KAP2 mirror of the kap1_calc_* methods
      * above. Same views/JS (both are already parameterized by $source), same
      * Wip_calc_model methods, just called with 'kap2'.
@@ -296,6 +306,11 @@ class Wip extends MY_Controller
     public function kap2_calc_cutoff_clear()
     {
         $this->handle_calc_cutoff_clear('kap2');
+    }
+
+    public function kap2_calc_cutoff_set_shop()
+    {
+        $this->handle_calc_cutoff_set_shop('kap2');
     }
 
     /**
@@ -390,6 +405,41 @@ class Wip extends MY_Controller
                 'file_name'    => 'Clear cutoff: ' . ($result['shop_code'] ?? $shop),
                 'total_rows'   => $result['cleared'],
                 'applied_rows' => $result['cleared'],
+                'skipped_rows' => 0,
+                'status'       => 'success',
+                'message'      => $result['message'],
+                'user_id'      => $this->auth_user['id'],
+            ));
+        }
+
+        $this->output
+            ->set_content_type('application/json')
+            ->set_output(json_encode(array(
+                'status'  => $result['ok'] ? 'success' : 'error',
+                'message' => $result['message'],
+            )));
+    }
+
+    /**
+     * Set the same cutoff VIN for every part in one shop within a KAP line
+     * (AJAX only — the "Apply to ALL parts in this shop" option in the
+     * "Add Cutoff VIN" modal).
+     */
+    protected function handle_calc_cutoff_set_shop($source)
+    {
+        $this->require_admin();
+
+        $this->load->model('Wip_calc_model');
+        $shop = (string) $this->input->post('shop');
+        $vin = (string) $this->input->post('vin');
+        $result = $this->Wip_calc_model->set_shop_cutoff($source, $shop, $vin, $this->auth_user['id']);
+
+        if ($result['ok']) {
+            $this->Wip_calc_model->log(array(
+                'source'       => $source,
+                'file_name'    => 'Manual entry (whole shop): ' . ($result['shop_code'] ?? $shop) . ' = ' . $vin,
+                'total_rows'   => $result['applied'] ?? 0,
+                'applied_rows' => $result['applied'] ?? 0,
                 'skipped_rows' => 0,
                 'status'       => 'success',
                 'message'      => $result['message'],

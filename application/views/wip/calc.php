@@ -163,13 +163,17 @@
                         <label class="form-label small">Shop</label>
                         <select class="form-select form-select-sm" name="shop_code" id="cutoffShopCode" required>
                             <?php foreach ($shops as $key => $label): ?>
-                            <option value="<?= html_escape($shop_codes[$key] ?? '') ?>">
+                            <option value="<?= html_escape($shop_codes[$key] ?? '') ?>" data-shop-key="<?= html_escape($key) ?>">
                                 <?= html_escape($label) ?> (<?= html_escape($shop_codes[$key] ?? '') ?>)
                             </option>
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <div class="mb-3">
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="cutoffApplyAll">
+                        <label class="form-check-label small" for="cutoffApplyAll">Apply to ALL parts in this shop (skip Part Number)</label>
+                    </div>
+                    <div class="mb-3" id="cutoffPartNumberGroup">
                         <label class="form-label small">Part Number</label>
                         <input type="text" class="form-control form-control-sm" name="part_number" id="cutoffPartNumber" list="partNumberList" placeholder="e.g. 62765-BZ040" required autocomplete="off">
                         <datalist id="partNumberList"></datalist>
@@ -177,7 +181,7 @@
                     <div class="mb-1">
                         <label class="form-label small">VIN</label>
                         <input type="text" class="form-control form-control-sm text-uppercase" name="vin" id="cutoffVin" placeholder="e.g. MHKAB1BA9TJ176981" required autocomplete="off">
-                        <div class="form-text">Must already exist in the cached <a href="<?= base_url($source) ?>" target="_blank">Master WIP</a> data for the selected Shop.</div>
+                        <div class="form-text" id="cutoffVinHelp">Must already exist in the cached <a href="<?= base_url($source) ?>" target="_blank">Master WIP</a> data for the selected Shop.</div>
                     </div>
                 </div>
                 <div class="modal-footer">

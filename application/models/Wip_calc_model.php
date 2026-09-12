@@ -1298,6 +1298,71 @@ class Wip_calc_model extends CI_Model
         );
     }
 
+    /**
+     * Set (or replace) the same cutoff VIN for EVERY part_number that uses
+     * one shop within a KAP line, in one go — the simpler alternative to
+     * set_cutoff() when the same cutoff genuinely applies line-wide (e.g.
+     * "everything from this VIN on is Welding WIP") instead of per part.
+     *
+     * @return array{ok:bool, message:string, shop_code?:string, vin?:string, applied?:int}
+     */
+    public function set_shop_cutoff($source, $shop, $vin_raw, $user_id)
+    {
+        $shop_codes = $this->config->item('wip_calc_shop_codes')[$source] ?? array();
+        if (!isset($shop_codes[$shop])) {
+            return array('ok' => false, 'message' => 'Unknown Shop for this KAP line.');
+        }
+        $shop_code = $shop_codes[$shop];
+
+        $vin = trim((string) $vin_raw);
+        if ($vin === '') {
+            return array('ok' => false, 'message' => 'VIN is required.');
+        }
+        if (!$this->wip_row_exists($source, $shop, $vin)) {
+            return array('ok' => false, 'message' => "VIN not found in the cached Master WIP data for {$shop_code}. Pull or upload that shop's WIP data first.");
+        }
+
+        $part_numbers = $this->bom_part_numbers_for_shop($shop_code);
+        if (empty($part_numbers)) {
+            return array('ok' => false, 'message' => "No BOM parts found for {$shop_code}.");
+        }
+
+        foreach ($part_numbers as $part_number) {
+            $this->upsert_one($shop_code, $part_number, $vin, $user_id);
+        }
+
+        return array(
+            'ok'        => true,
+            'message'   => 'Cutoff VIN ' . $vin . ' applied to all ' . count($part_numbers) . " part(s) in {$shop_code}.",
+            'shop_code' => $shop_code,
+            'vin'       => $vin,
+            'applied'   => count($part_numbers),
+        );
+    }
+
+    /** Distinct part numbers (BOM part_number, falling back to material) whose Shop Code lists $shop_code. */
+    protected function bom_part_numbers_for_shop($shop_code)
+    {
+        $this->db->select('part_number, material')->from('bom');
+        $this->db->group_start();
+        foreach (array_unique(array($shop_code, strtoupper($shop_code), strtolower($shop_code))) as $variant) {
+            $this->db->or_where('FIND_IN_SET(' . $this->db->escape($variant) . ', shop_code) >', 0);
+        }
+        $this->db->group_end();
+        $rows = $this->db->get()->result_array();
+
+        $parts = array();
+        foreach ($rows as $row) {
+            $part_number = $row['part_number'] !== '' ? $row['part_number'] : $row['material'];
+            $part_number = trim((string) $part_number);
+            if ($part_number !== '') {
+                $parts[$part_number] = true;
+            }
+        }
+
+        return array_keys($parts);
+    }
+
     protected function wip_row_exists($source, $shop, $vin)
     {
         return (bool) $this->db->select('id')
