@@ -111,6 +111,25 @@ class Part_list_model extends CI_Model
         return $this->db->where('id', $id)->delete($this->table);
     }
 
+    /**
+     * Delete several rows at once (the "Delete Selected" bulk action on
+     * the Part List page's checkbox column).
+     *
+     * @param int[] $ids
+     * @return int number of rows actually deleted
+     */
+    public function delete_many(array $ids)
+    {
+        $ids = array_values(array_filter(array_map('intval', $ids)));
+        if (empty($ids)) {
+            return 0;
+        }
+
+        $this->db->where_in('id', $ids)->delete($this->table);
+
+        return $this->db->affected_rows();
+    }
+
     public function truncate()
     {
         $this->db->truncate($this->table);

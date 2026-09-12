@@ -229,4 +229,23 @@ class Part_list extends MY_Controller
         set_flash('success', 'Part List entry deleted.');
         redirect('part-list');
     }
+
+    /**
+     * Delete several rows at once (AJAX only — the "Delete Selected"
+     * button next to the table's checkbox column).
+     */
+    public function delete_bulk()
+    {
+        $this->require_admin();
+
+        $ids = $this->input->post('ids');
+        $deleted = is_array($ids) ? $this->Part_list_model->delete_many($ids) : 0;
+
+        $this->output
+            ->set_content_type('application/json')
+            ->set_output(json_encode(array(
+                'status'  => 'success',
+                'deleted' => $deleted,
+            )));
+    }
 }

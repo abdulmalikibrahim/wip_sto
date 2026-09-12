@@ -66,7 +66,12 @@
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
         <span><i class="bi bi-table me-1"></i> Part List</span>
         <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
-        <span id="partListSelectionInfo" class="badge bg-primary d-none">0 selected</span>
+        <div class="d-flex align-items-center gap-2">
+            <span id="partListSelectionInfo" class="badge bg-primary d-none">0 selected</span>
+            <button type="button" class="btn btn-danger btn-sm d-none" id="btnDeleteSelectedPartList">
+                <i class="bi bi-trash me-1"></i> Delete Selected
+            </button>
+        </div>
         <?php endif; ?>
     </div>
     <div class="card-body">

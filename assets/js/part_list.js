@@ -67,12 +67,9 @@
 
     if (isAdmin) {
         function updateSelectionInfo() {
-            var $badge = $('#partListSelectionInfo');
-            if (selectedIds.size > 0) {
-                $badge.removeClass('d-none').text(selectedIds.size + ' selected');
-            } else {
-                $badge.addClass('d-none');
-            }
+            var has = selectedIds.size > 0;
+            $('#partListSelectionInfo').toggleClass('d-none', !has).text(selectedIds.size + ' selected');
+            $('#btnDeleteSelectedPartList').toggleClass('d-none', !has);
         }
 
         // After every redraw (page change, search, sort, reload): the
@@ -110,6 +107,50 @@
                 }
             });
             updateSelectionInfo();
+        });
+
+        // Delete Selected — bulk-deletes every id remembered in
+        // selectedIds (spanning however many pages they were picked
+        // across), not just whatever's currently on screen.
+        $('#btnDeleteSelectedPartList').on('click', function () {
+            var ids = Array.from(selectedIds);
+            if (!ids.length) return;
+
+            Swal.fire({
+                title: 'Delete ' + ids.length + ' selected entr' + (ids.length === 1 ? 'y' : 'ies') + '?',
+                text: 'This cannot be undone.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Delete',
+                confirmButtonColor: '#dc3545',
+                background: '#21262f',
+                color: '#e4e6eb'
+            }).then(function (res) {
+                if (!res.isConfirmed) return;
+
+                var $btn = $('#btnDeleteSelectedPartList');
+                $btn.prop('disabled', true);
+                var originalHtml = $btn.html();
+                $btn.html('<span class="spinner-border spinner-border-sm me-1" role="status"></span>Deleting...');
+
+                $.post(BASE_URL + 'part-list/delete-bulk', { ids: ids }, null, 'json')
+                    .done(function (resp) {
+                        if (resp.status !== 'success') {
+                            toast('error', 'Failed to delete the selected entries.');
+                            return;
+                        }
+                        toast('success', resp.deleted + ' entr' + (resp.deleted === 1 ? 'y' : 'ies') + ' deleted.');
+                        selectedIds.clear();
+                        updateSelectionInfo();
+                        table.ajax.reload(null, false);
+                    })
+                    .fail(function () {
+                        toast('error', 'Failed to reach the server.');
+                    })
+                    .always(function () {
+                        $btn.prop('disabled', false).html(originalHtml);
+                    });
+            });
         });
     }
 

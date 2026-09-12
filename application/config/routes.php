@@ -74,6 +74,7 @@ $route['part-list/template'] = 'part_list/template';
 $route['part-list/export'] = 'part_list/export';
 $route['part-list/upload'] = 'part_list/upload';
 $route['part-list/delete/(:num)'] = 'part_list/delete/$1';
+$route['part-list/delete-bulk'] = 'part_list/delete_bulk';
 
 // Master WIP
 $route['wip/kap1'] = 'wip/kap1';
