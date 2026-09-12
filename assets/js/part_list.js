@@ -3,7 +3,29 @@
 
     var isAdmin = $('#tblPartList thead th').last().text().trim() === 'Action';
 
-    var columns = [
+    // Row selection (checkbox column) — kept in a Set so it survives
+    // server-side pagination/search/sort redraws, which only ever have
+    // the CURRENT page's rows in the DOM. "Select all" only ever acts on
+    // the rows currently on screen; it intentionally resets to unchecked
+    // on every redraw (see the `draw` handler below) rather than trying
+    // to reflect "is the new page fully selected" — one click always
+    // means "select everything on THIS page", nothing to second-guess.
+    var selectedIds = new Set();
+
+    var columns = [];
+    if (isAdmin) {
+        columns.push({
+            data: 'id',
+            orderable: false,
+            searchable: false,
+            className: 'text-center',
+            render: function (id, type) {
+                if (type !== 'display') return id;
+                return '<input type="checkbox" class="form-check-input row-checkbox-part-list" value="' + id + '">';
+            }
+        });
+    }
+    columns.push(
         { data: 'no', orderable: false, searchable: false },
         { data: 'model' },
         { data: 'suffix' },
@@ -12,8 +34,8 @@
         { data: 'material_description' },
         { data: 'qty', className: 'text-end' },
         { data: 'uom' },
-        { data: 'shop_code' },
-    ];
+        { data: 'shop_code' }
+    );
 
     if (isAdmin) {
         columns.push({
@@ -40,8 +62,56 @@
             }
         },
         columns: columns,
-        order: [[1, 'asc']]
+        order: [[isAdmin ? 2 : 1, 'asc']]
     }));
+
+    if (isAdmin) {
+        function updateSelectionInfo() {
+            var $badge = $('#partListSelectionInfo');
+            if (selectedIds.size > 0) {
+                $badge.removeClass('d-none').text(selectedIds.size + ' selected');
+            } else {
+                $badge.addClass('d-none');
+            }
+        }
+
+        // After every redraw (page change, search, sort, reload): the
+        // "select all" checkbox always resets to unchecked, and any row
+        // that's part of the remembered selection gets its checkbox
+        // re-checked (so flipping back to an earlier page shows what was
+        // already picked there).
+        table.on('draw', function () {
+            $('#checkAllPartList').prop('checked', false);
+            $('#tblPartList tbody .row-checkbox-part-list').each(function () {
+                var id = String($(this).val());
+                $(this).prop('checked', selectedIds.has(id));
+            });
+        });
+
+        $('#tblPartList').on('change', '.row-checkbox-part-list', function () {
+            var id = String($(this).val());
+            if (this.checked) {
+                selectedIds.add(id);
+            } else {
+                selectedIds.delete(id);
+            }
+            updateSelectionInfo();
+        });
+
+        $('#checkAllPartList').on('change', function () {
+            var checked = this.checked;
+            $('#tblPartList tbody .row-checkbox-part-list').each(function () {
+                $(this).prop('checked', checked);
+                var id = String($(this).val());
+                if (checked) {
+                    selectedIds.add(id);
+                } else {
+                    selectedIds.delete(id);
+                }
+            });
+            updateSelectionInfo();
+        });
+    }
 
     // Model cards: click to filter the table down to that model, click again
     // (or click "All") to clear it. Combines with the search box, not replaces it.

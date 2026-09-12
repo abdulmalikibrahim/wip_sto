@@ -63,14 +63,20 @@
 <?php endif; ?>
 
 <div class="card mb-3">
-    <div class="card-header">
-        <i class="bi bi-table me-1"></i> Part List
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span><i class="bi bi-table me-1"></i> Part List</span>
+        <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
+        <span id="partListSelectionInfo" class="badge bg-primary d-none">0 selected</span>
+        <?php endif; ?>
     </div>
     <div class="card-body">
         <div class="table-responsive">
             <table id="tblPartList" class="table table-hover align-middle w-100">
                 <thead>
                     <tr>
+                        <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
+                        <th><input type="checkbox" id="checkAllPartList" class="form-check-input" title="Select all on this page"></th>
+                        <?php endif; ?>
                         <th>No</th>
                         <th>Model</th>
                         <th>Suffix</th>
