@@ -5,6 +5,17 @@
     </a>
 </div>
 
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div class="d-flex align-items-center gap-2">
+        <span class="small text-secondary"><i class="bi bi-database me-1"></i>Calculate from:</span>
+        <div class="btn-group btn-group-sm" role="group" aria-label="Calculation basis">
+            <button type="button" class="btn btn-outline-primary" data-basis-option="bom">Master BOM</button>
+            <button type="button" class="btn btn-outline-primary" data-basis-option="part_list">Part List</button>
+        </div>
+        <span class="small text-secondary d-none d-md-inline">&mdash; which table the Model/Suffix &times; Qty usage is read from.</span>
+    </div>
+</div>
+
 <div class="d-flex flex-wrap justify-content-end align-items-center gap-2 mb-3">
     <a href="<?= base_url($source . '/calc/detail/export') ?>" class="btn btn-sm btn-success" id="btnExportCalcDetail">
         <i class="bi bi-file-earmark-excel"></i> Download Excel
@@ -50,6 +61,22 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="modalFormulaBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- VIN List Modal — the units behind one suffix row's Matching Units count -->
+<div class="modal fade" id="modalVinList" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-upc-scan me-1"></i> Matching Units — VIN List</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="modalVinListBody"></div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
             </div>

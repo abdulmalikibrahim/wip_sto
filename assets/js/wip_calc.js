@@ -179,8 +179,17 @@
         var params = new URLSearchParams();
         if (hideZeroRows) params.set('hide_zero', '1');
         if (activeShopFilter) params.set('shop_filter', activeShopFilter);
-        var qs = params.toString();
-        $btnExportCalc.attr('href', exportBaseHref + (qs ? '?' + qs : ''));
+        params.set('basis', CalcBasis.get());
+        $btnExportCalc.attr('href', exportBaseHref + '?' + params.toString());
+    }
+
+    // The cutoff templates list one row per part, so they follow the basis too.
+    function updateTemplateHrefs() {
+        $('.dropdown-menu a[href*="/calc/template"]').each(function () {
+            var $link = $(this);
+            if (!$link.data('baseHref')) $link.data('baseHref', $link.attr('href'));
+            $link.attr('href', CalcBasis.url($link.data('baseHref')));
+        });
     }
 
     $btnToggleHideZero.on('click', function () {
@@ -268,7 +277,7 @@
         $('#calcAlert').addClass('d-none').text('');
         table.processing(true);
 
-        $.getJSON(BASE_URL + WIP_CALC_SOURCE + '/calc/data')
+        $.getJSON(CalcBasis.url(BASE_URL + WIP_CALC_SOURCE + '/calc/data'))
             .done(function (resp) {
                 if (resp.status !== 'success') {
                     $('#calcAlert').removeClass('d-none').text(resp.message || 'Failed to load data.');
@@ -351,7 +360,10 @@
                 ? { shop: $('#cutoffShopCode option:selected').data('shop-key'), vin: vin }
                 : { shop_code: $('#cutoffShopCode').val(), part_number: $cutoffPartNumber.val(), vin: vin };
 
-            $.post(BASE_URL + WIP_CALC_SOURCE + url, payload, null, 'json')
+            // "Apply to ALL parts in this shop" enumerates parts from the
+            // active basis, so it travels in the query string (the controller
+            // reads it with input->get(), alongside this POST body).
+            $.post(CalcBasis.url(BASE_URL + WIP_CALC_SOURCE + url), payload, null, 'json')
                 .done(function (resp) {
                     if (resp.status !== 'success') {
                         $setCutoffAlert.removeClass('d-none').text(resp.message || 'Failed to save cutoff VIN.');
@@ -392,5 +404,14 @@
         });
     });
 
+    // Switching basis re-runs the calculation server-side, and the export
+    // and template links have to carry the new value too.
+    $(document).on('calcbasis:change', function () {
+        updateExportHref();
+        updateTemplateHrefs();
+        load();
+    });
+
+    updateTemplateHrefs();
     load();
 })(jQuery);

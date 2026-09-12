@@ -56,14 +56,11 @@
                 <thead>
                     <tr>
                         <th>No</th>
+                        <th>Sequence</th>
                         <th>VIN</th>
                         <th>Suffix</th>
                         <th>Katashiki</th>
                         <th>Model</th>
-                        <th>Color Code</th>
-                        <th>Color Desc</th>
-                        <th>Last Scan</th>
-                        <th>Scan Date</th>
                         <th>Shop Code</th>
                     </tr>
                 </thead>
@@ -94,8 +91,12 @@
                     <p class="small text-secondary">
                         Fallback for when the WIP server is down. File must use the
                         <a href="<?= base_url($source . '/template') ?>">standard template</a>:
-                        <strong>VIN, Suffix, Katashiki, Model, Color Code, Color Desc, Last Scan, Scan Date, Shop Code</strong>.
+                        <strong>VIN, Suffix, Katashiki, Model, Shop Code</strong>.
                         Shop Code must be one of: <?= html_escape(implode(', ', array_map('strtoupper', $shops))) ?>.
+                        Files still carrying the old Color Code / Color Desc / Last Scan / Scan Date columns are
+                        accepted too &mdash; those four are simply ignored.
+                        <strong>Row order matters:</strong> rows are stored in the order they appear in the file, and
+                        that order is the Sequence the WIP Calc cutoff counts against.
                     </p>
                     <label class="upload-dropzone d-block mb-3" id="dropzoneWip">
                         <i class="bi bi-file-earmark-excel fs-2 d-block mb-1"></i>

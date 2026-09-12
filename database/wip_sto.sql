@@ -180,10 +180,6 @@ CREATE TABLE `wip_data` (
   `sfx` varchar(20) DEFAULT NULL,
   `katashiki` varchar(30) DEFAULT NULL,
   `modelcode` varchar(30) DEFAULT NULL,
-  `colorcode` varchar(20) DEFAULT NULL,
-  `colorname` varchar(100) DEFAULT NULL,
-  `wipname` varchar(100) DEFAULT NULL,
-  `scandate` varchar(30) DEFAULT NULL,
   `shopcode` varchar(30) DEFAULT NULL,
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL
@@ -247,7 +243,12 @@ ALTER TABLE `part_list`
   -- Speeds up Part_list_model::build_diff()'s Model+Suffix+Part Number
   -- join against `bom` (see idx_bom_msp above) — without this, that join
   -- took 20+ seconds on the real ~150k/180k-row tables.
-  ADD KEY `idx_part_list_msp` (`model`, `suffix`, `part_number`);
+  ADD KEY `idx_part_list_msp` (`model`, `suffix`, `part_number`),
+  -- A Part List row's identity. shop_code is part of it because the same
+  -- part+model+suffix legitimately appears in different shops with
+  -- different quantities. Uploads upsert against this key, so re-uploading
+  -- refreshes a row instead of adding a duplicate of it.
+  ADD UNIQUE KEY `uniq_part_list_row` (`model`, `suffix`, `part_number`, `shop_code`);
 
 --
 -- Indexes for table `part_list_upload_log`

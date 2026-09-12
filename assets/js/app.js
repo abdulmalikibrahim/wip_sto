@@ -25,6 +25,64 @@
     tickClock();
     setInterval(tickClock, 1000);
 
+    // ------------------------------------------------------------
+    // WIP Calc basis — whether the calculation reads part usage from
+    // the Master BOM or the Part List. Remembered per browser so the
+    // choice carries across the Calc, Detail and Combined pages, and
+    // sent along as ?basis= on every calc request, export and template.
+    // ------------------------------------------------------------
+    window.CalcBasis = {
+        KEY: 'wipCalcBasis',
+
+        get: function () {
+            try {
+                return localStorage.getItem(this.KEY) === 'part_list' ? 'part_list' : 'bom';
+            } catch (e) {
+                return 'bom'; // private windows / blocked storage — fall back to the default
+            }
+        },
+
+        set: function (value) {
+            try {
+                localStorage.setItem(this.KEY, value === 'part_list' ? 'part_list' : 'bom');
+            } catch (e) { /* not fatal — the choice just won't stick */ }
+        },
+
+        label: function () {
+            return this.get() === 'part_list' ? 'Part List' : 'Master BOM';
+        },
+
+        /** Append the current basis to a URL, keeping any query it already has. */
+        url: function (url) {
+            return url + (url.indexOf('?') === -1 ? '?' : '&') + 'basis=' + this.get();
+        }
+    };
+
+    // Wire any basis switch on the page. Pages react by listening for
+    // 'calcbasis:change' on the document and reloading their own data.
+    $(function () {
+        var $options = $('[data-basis-option]');
+        if (!$options.length) return;
+
+        function paint() {
+            var current = window.CalcBasis.get();
+            $options.each(function () {
+                $(this).toggleClass('active', $(this).data('basis-option') === current);
+            });
+        }
+
+        paint();
+
+        $options.on('click', function () {
+            var value = $(this).data('basis-option');
+            if (value === window.CalcBasis.get()) return;
+
+            window.CalcBasis.set(value);
+            paint();
+            $(document).trigger('calcbasis:change', [value]);
+        });
+    });
+
     // Sensible DataTables defaults used across the app
     window.APP_DT_DEFAULTS = {
         lengthMenu: [[25, 50, 100], [25, 50, 100]],

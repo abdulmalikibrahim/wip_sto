@@ -120,10 +120,6 @@ class Wip_kap2_model extends CI_Model
             'sfx'        => trim((string) ($rec['Suffix'] ?? '')),
             'katashiki'  => trim((string) ($rec['Ktsk'] ?? '')),
             'modelcode'  => trim((string) ($rec['Model'] ?? '')),
-            'colorcode'  => trim((string) ($rec['ColorCode'] ?? '')),
-            'colorname'  => trim((string) ($rec['Color'] ?? '')),
-            'wipname'    => trim((string) ($rec['LastScan'] ?? '')),
-            'scandate'   => trim((string) ($rec['ScanDate'] ?? '')),
             'shopcode'   => $shopcode,
         );
     }

@@ -13,6 +13,17 @@
     <a href="<?= base_url('wip/kap2/calc') ?>">WIP Calc. KAP 2</a> pages.
 </div>
 
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div class="d-flex align-items-center gap-2">
+        <span class="small text-secondary"><i class="bi bi-database me-1"></i>Calculate from:</span>
+        <div class="btn-group btn-group-sm" role="group" aria-label="Calculation basis">
+            <button type="button" class="btn btn-outline-primary" data-basis-option="bom">Master BOM</button>
+            <button type="button" class="btn btn-outline-primary" data-basis-option="part_list">Part List</button>
+        </div>
+        <span class="small text-secondary d-none d-md-inline">&mdash; which table the Model/Suffix &times; Qty usage is read from.</span>
+    </div>
+</div>
+
 <div class="d-flex flex-wrap justify-content-end align-items-center gap-2 mb-3">
     <button type="button" class="btn btn-sm btn-secondary" id="btnToggleHideZero">
         <i class="bi bi-eye-slash"></i> Hide Zero-Total Rows

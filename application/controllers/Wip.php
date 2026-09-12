@@ -168,13 +168,13 @@ class Wip extends MY_Controller
     public function kap1_calc_data()
     {
         $this->load->model('Wip_calc_model');
-        $this->respond_calc($this->Wip_calc_model->calc('kap1'));
+        $this->respond_calc($this->Wip_calc_model->calc('kap1', $this->calc_basis()));
     }
 
     public function kap1_calc_template()
     {
         $this->load->model('Wip_calc_model');
-        $this->Wip_calc_model->download_template('kap1', (string) $this->input->get('shop'));
+        $this->Wip_calc_model->download_template('kap1', (string) $this->input->get('shop'), $this->calc_basis());
     }
 
     public function kap1_calc_export()
@@ -182,7 +182,7 @@ class Wip extends MY_Controller
         $this->load->model('Wip_calc_model');
         $hide_zero = $this->input->get('hide_zero') === '1';
         $shop_filter = (string) $this->input->get('shop_filter');
-        $this->Wip_calc_model->export('kap1', 'WIP Calc - KAP 1', $hide_zero, $shop_filter);
+        $this->Wip_calc_model->export('kap1', 'WIP Calc - KAP 1', $hide_zero, $shop_filter, $this->calc_basis());
     }
 
     /**
@@ -201,13 +201,13 @@ class Wip extends MY_Controller
     public function kap1_calc_detail_data()
     {
         $this->load->model('Wip_calc_model');
-        $this->respond_calc_detail($this->Wip_calc_model->calc_detail('kap1'));
+        $this->respond_calc_detail($this->Wip_calc_model->calc_detail('kap1', $this->calc_basis()));
     }
 
     public function kap1_calc_detail_export()
     {
         $this->load->model('Wip_calc_model');
-        $this->Wip_calc_model->export_detail('kap1', 'WIP Calc Detail - KAP 1');
+        $this->Wip_calc_model->export_detail('kap1', 'WIP Calc Detail - KAP 1', $this->calc_basis());
     }
 
     /**
@@ -220,9 +220,38 @@ class Wip extends MY_Controller
         $result = $this->Wip_calc_model->part_breakdown(
             'kap1',
             (string) $this->input->get('shop_code'),
-            (string) $this->input->get('part_number')
+            (string) $this->input->get('part_number'),
+            $this->calc_basis()
         );
         $this->output->set_content_type('application/json')->set_output(json_encode($result));
+    }
+
+    /**
+     * The actual cached WIP units behind one suffix row's "Matching Units"
+     * count in the Formula Detail modal (AJAX only) — lets a user spot-check
+     * a count against their own VIN list, e.g. to catch a unit cached twice.
+     */
+    public function kap1_calc_detail_breakdown_vins()
+    {
+        $this->load->model('Wip_calc_model');
+        $result = $this->Wip_calc_model->part_breakdown_vins(
+            'kap1',
+            (string) $this->input->get('shop_code'),
+            (string) $this->input->get('part_number'),
+            (string) $this->input->get('model'),
+            (string) $this->input->get('suffix')
+        );
+        $this->output->set_content_type('application/json')->set_output(json_encode($result));
+    }
+
+    /**
+     * Which table WIP Calc works from — the Master BOM (default) or the
+     * Part List. Both describe the same model/suffix/qty usage, so either
+     * can be the basis; the UI toggles it and passes ?basis= along.
+     */
+    protected function calc_basis()
+    {
+        return $this->input->get('basis') === 'part_list' ? 'part_list' : 'bom';
     }
 
     protected function respond_calc_detail(array $result)
@@ -292,13 +321,13 @@ class Wip extends MY_Controller
     public function kap2_calc_data()
     {
         $this->load->model('Wip_calc_model');
-        $this->respond_calc($this->Wip_calc_model->calc('kap2'));
+        $this->respond_calc($this->Wip_calc_model->calc('kap2', $this->calc_basis()));
     }
 
     public function kap2_calc_template()
     {
         $this->load->model('Wip_calc_model');
-        $this->Wip_calc_model->download_template('kap2', (string) $this->input->get('shop'));
+        $this->Wip_calc_model->download_template('kap2', (string) $this->input->get('shop'), $this->calc_basis());
     }
 
     public function kap2_calc_export()
@@ -306,7 +335,7 @@ class Wip extends MY_Controller
         $this->load->model('Wip_calc_model');
         $hide_zero = $this->input->get('hide_zero') === '1';
         $shop_filter = (string) $this->input->get('shop_filter');
-        $this->Wip_calc_model->export('kap2', 'WIP Calc - KAP 2', $hide_zero, $shop_filter);
+        $this->Wip_calc_model->export('kap2', 'WIP Calc - KAP 2', $hide_zero, $shop_filter, $this->calc_basis());
     }
 
     public function kap2_calc_detail()
@@ -320,13 +349,13 @@ class Wip extends MY_Controller
     public function kap2_calc_detail_data()
     {
         $this->load->model('Wip_calc_model');
-        $this->respond_calc_detail($this->Wip_calc_model->calc_detail('kap2'));
+        $this->respond_calc_detail($this->Wip_calc_model->calc_detail('kap2', $this->calc_basis()));
     }
 
     public function kap2_calc_detail_export()
     {
         $this->load->model('Wip_calc_model');
-        $this->Wip_calc_model->export_detail('kap2', 'WIP Calc Detail - KAP 2');
+        $this->Wip_calc_model->export_detail('kap2', 'WIP Calc Detail - KAP 2', $this->calc_basis());
     }
 
     public function kap2_calc_detail_breakdown()
@@ -335,7 +364,21 @@ class Wip extends MY_Controller
         $result = $this->Wip_calc_model->part_breakdown(
             'kap2',
             (string) $this->input->get('shop_code'),
-            (string) $this->input->get('part_number')
+            (string) $this->input->get('part_number'),
+            $this->calc_basis()
+        );
+        $this->output->set_content_type('application/json')->set_output(json_encode($result));
+    }
+
+    public function kap2_calc_detail_breakdown_vins()
+    {
+        $this->load->model('Wip_calc_model');
+        $result = $this->Wip_calc_model->part_breakdown_vins(
+            'kap2',
+            (string) $this->input->get('shop_code'),
+            (string) $this->input->get('part_number'),
+            (string) $this->input->get('model'),
+            (string) $this->input->get('suffix')
         );
         $this->output->set_content_type('application/json')->set_output(json_encode($result));
     }
@@ -377,7 +420,7 @@ class Wip extends MY_Controller
     public function calc_combined_data()
     {
         $this->load->model('Wip_calc_model');
-        $result = $this->Wip_calc_model->calc_combined();
+        $result = $this->Wip_calc_model->calc_combined($this->calc_basis());
 
         $rows = array();
         foreach ($result['data'] as $i => $r) {
@@ -397,7 +440,7 @@ class Wip extends MY_Controller
     {
         $this->load->model('Wip_calc_model');
         $hide_zero = $this->input->get('hide_zero') === '1';
-        $this->Wip_calc_model->export_combined('WIP Calc - KAP 1 & 2', $hide_zero);
+        $this->Wip_calc_model->export_combined('WIP Calc - KAP 1 & 2', $hide_zero, $this->calc_basis());
     }
 
     protected function handle_calc_cutoff_set($source)
@@ -479,7 +522,7 @@ class Wip extends MY_Controller
         $this->load->model('Wip_calc_model');
         $shop = (string) $this->input->post('shop');
         $vin = (string) $this->input->post('vin');
-        $result = $this->Wip_calc_model->set_shop_cutoff($source, $shop, $vin, $this->auth_user['id']);
+        $result = $this->Wip_calc_model->set_shop_cutoff($source, $shop, $vin, $this->auth_user['id'], $this->calc_basis());
 
         if ($result['ok']) {
             $this->Wip_calc_model->log(array(
@@ -708,7 +751,7 @@ class Wip extends MY_Controller
             return;
         }
 
-        $headers = array('No', 'VIN', 'Suffix', 'Katashiki', 'Model', 'Color Code', 'Color Desc', 'Last Scan', 'Scan Date', 'Shop Code');
+        $headers = array('No', 'Sequence', 'VIN', 'Suffix', 'Katashiki', 'Model', 'Shop Code');
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -726,14 +769,11 @@ class Wip extends MY_Controller
         foreach ($result['data'] as $i => $row) {
             $sheet->fromArray(array(
                 $i + 1,
+                $row['seq'],
                 $row['vin'],
                 $row['sfx'],
                 $row['katashiki'],
                 $row['modelcode'],
-                $row['colorcode'],
-                $row['colorname'],
-                $row['wipname'],
-                $row['scandate'],
                 $row['shopcode'],
             ), null, "A{$r}");
             $r++;

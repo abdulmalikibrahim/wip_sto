@@ -6,14 +6,11 @@
         processing: true,
         columns: [
             { data: 'no' },
+            { data: 'seq', className: 'text-end' },
             { data: 'vin' },
             { data: 'sfx' },
             { data: 'katashiki' },
             { data: 'modelcode' },
-            { data: 'colorcode' },
-            { data: 'colorname' },
-            { data: 'wipname' },
-            { data: 'scandate' },
             { data: 'shopcode' },
         ]
     });
@@ -40,12 +37,10 @@
                             '<span class="badge text-bg-primary">' + esc(r.shopcode) + '</span>' +
                         '</div>' +
                         '<dl>' +
+                            '<dt>Sequence</dt><dd>' + esc(r.seq) + '</dd>' +
                             '<dt>Suffix</dt><dd>' + esc(r.sfx) + '</dd>' +
                             '<dt>Katashiki</dt><dd>' + esc(r.katashiki) + '</dd>' +
                             '<dt>Model</dt><dd>' + esc(r.modelcode) + '</dd>' +
-                            '<dt>Color</dt><dd>' + esc(r.colorcode) + ' - ' + esc(r.colorname) + '</dd>' +
-                            '<dt>Last Scan</dt><dd>' + esc(r.wipname) + '</dd>' +
-                            '<dt>Scan Date</dt><dd>' + esc(r.scandate) + '</dd>' +
                         '</dl>' +
                     '</div>' +
                 '</div>';

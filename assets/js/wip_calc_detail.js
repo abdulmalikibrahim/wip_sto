@@ -78,11 +78,17 @@
 
         var rows = resp.suffixes.map(function (s) {
             var zero = parseFloat(s.subtotal) === 0;
+            // "See VINs" is only useful when there's something to actually
+            // list — a zero-count suffix has none to show.
+            var vinBtn = zero ? '' :
+                '<button type="button" class="btn btn-link btn-sm p-0 ms-2 btn-see-vins" ' +
+                'data-part-number="' + esc(resp.part_number) + '" data-shop-code="' + esc(resp.shop_code) + '" ' +
+                'data-model="' + esc(s.model) + '" data-suffix="' + esc(s.suffix) + '">See VINs</button>';
             return '<tr' + (zero ? ' class="text-secondary"' : '') + '>' +
                 '<td>' + esc(s.model) + '</td>' +
                 '<td>' + esc(s.suffix) + '</td>' +
                 '<td class="text-end">' + esc(s.qty) + '</td>' +
-                '<td class="text-end">' + dashIfZero(s.unit_count) + '</td>' +
+                '<td class="text-end">' + dashIfZero(s.unit_count) + vinBtn + '</td>' +
                 '<td class="text-end' + (zero ? '' : ' fw-semibold text-body') + '">' + dashIfZero(s.subtotal) + '</td>' +
                 '</tr>';
         }).join('');
@@ -108,6 +114,84 @@
         );
     }
 
+    // "See VINs" — the actual cached units behind one suffix row's Matching
+    // Units count, so a number that looks off against a hand-counted list
+    // (e.g. Excel) can be checked VIN by VIN. Duplicate VINs (the same unit
+    // cached twice) are highlighted, since that's the usual cause.
+    var $modalVinListBody = $('#modalVinListBody');
+
+    function renderVinList(resp) {
+        if (!resp.vins.length) {
+            $modalVinListBody.html('<div class="text-secondary">No matching units found.</div>');
+            return;
+        }
+
+        var dupCount = resp.vins.filter(function (v) { return v.duplicate; }).length;
+        var warning = dupCount > 0 ?
+            '<div class="alert alert-warning py-2 px-3 small mb-3">' +
+                '<i class="bi bi-exclamation-triangle me-1"></i>' +
+                dupCount + ' row(s) below share a VIN with another row — the same physical unit is cached more than once, ' +
+                'which inflates this count above a hand-counted list.' +
+            '</div>' : '';
+
+        var rows = resp.vins.map(function (v) {
+            return '<tr' + (v.duplicate ? ' class="table-warning"' : '') + '>' +
+                '<td class="text-end">' + esc(v.seq) + '</td>' +
+                '<td>' + esc(v.vin) + (v.duplicate ? ' <i class="bi bi-exclamation-triangle-fill text-warning" title="Duplicate VIN"></i>' : '') + '</td>' +
+                '<td>' + esc(v.katashiki) + '</td>' +
+                '<td>' + esc(v.modelcode) + '</td>' +
+                '<td>' + esc(v.sfx) + '</td>' +
+                '</tr>';
+        }).join('');
+
+        $modalVinListBody.html(
+            '<dl class="row mb-3 small">' +
+                fieldRow('Part Number', esc(resp.part_number)) +
+                fieldRow('Model / Suffix', esc(resp.model) + ' / ' + esc(resp.suffix)) +
+                fieldRow('Shop', esc(resp.shop_label)) +
+                fieldRow('Matching Units', esc(resp.unit_count)) +
+            '</dl>' +
+            warning +
+            '<div class="table-responsive">' +
+                '<table class="table table-sm table-hover mb-0">' +
+                    '<thead><tr><th class="text-end">Seq</th><th>VIN</th><th>Katashiki</th><th>Model</th><th>Suffix</th></tr></thead>' +
+                    '<tbody>' + rows + '</tbody>' +
+                '</table>' +
+            '</div>'
+        );
+    }
+
+    $modalFormulaBody.on('click', '.btn-see-vins', function () {
+        var $btn = $(this);
+        var params = {
+            part_number: $btn.data('part-number'),
+            shop_code: $btn.data('shop-code'),
+            model: $btn.data('model'),
+            suffix: $btn.data('suffix')
+        };
+
+        // Bootstrap doesn't officially support two modals open at once, so
+        // step out of the Formula modal before opening this one instead of
+        // stacking them.
+        var formulaModal = bootstrap.Modal.getInstance(document.getElementById('modalFormula'));
+        if (formulaModal) formulaModal.hide();
+
+        $modalVinListBody.html('<div class="text-center text-secondary py-4"><span class="spinner-border spinner-border-sm me-2"></span>Loading…</div>');
+        bootstrap.Modal.getOrCreateInstance('#modalVinList').show();
+
+        $.getJSON(CalcBasis.url(BASE_URL + WIP_CALC_SOURCE + '/calc/detail/breakdown/vins'), params)
+            .done(function (resp) {
+                if (!resp.ok) {
+                    $modalVinListBody.html('<div class="alert alert-danger mb-0">' + esc(resp.message || 'Failed to load the VIN list.') + '</div>');
+                    return;
+                }
+                renderVinList(resp);
+            })
+            .fail(function () {
+                $modalVinListBody.html('<div class="alert alert-danger mb-0">Failed to reach the server.</div>');
+            });
+    });
+
     $('#tblWipCalcDetail').on('click', '.btn-formula', function () {
         var rowData = table.row($(this).closest('tr')).data();
         if (!rowData) return;
@@ -115,7 +199,7 @@
         $modalFormulaBody.html('<div class="text-center text-secondary py-4"><span class="spinner-border spinner-border-sm me-2"></span>Loading…</div>');
         bootstrap.Modal.getOrCreateInstance('#modalFormula').show();
 
-        $.getJSON(BASE_URL + WIP_CALC_SOURCE + '/calc/detail/breakdown', {
+        $.getJSON(CalcBasis.url(BASE_URL + WIP_CALC_SOURCE + '/calc/detail/breakdown'), {
             part_number: rowData.part_number,
             shop_code: rowData.shop_code
         })
@@ -135,7 +219,7 @@
         $('#calcDetailAlert').addClass('d-none').text('');
         table.processing(true);
 
-        $.getJSON(BASE_URL + WIP_CALC_SOURCE + '/calc/detail/data')
+        $.getJSON(CalcBasis.url(BASE_URL + WIP_CALC_SOURCE + '/calc/detail/data'))
             .done(function (resp) {
                 if (resp.status !== 'success') {
                     $('#calcDetailAlert').removeClass('d-none').text(resp.message || 'Failed to load data.');
@@ -161,7 +245,7 @@
         if (exportInProgress) return;
 
         var $btn = $(this);
-        var url = $btn.attr('href');
+        var url = CalcBasis.url($btn.attr('href'));
         var originalHtml = $btn.html();
 
         exportInProgress = true;
@@ -195,6 +279,11 @@
                 exportInProgress = false;
                 $btn.removeClass('disabled').css('pointer-events', '').html(originalHtml);
             });
+    });
+
+    // Switching basis re-runs the whole calculation server-side.
+    $(document).on('calcbasis:change', function () {
+        load();
     });
 
     load();

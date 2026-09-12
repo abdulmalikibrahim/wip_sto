@@ -94,7 +94,7 @@
     });
 
     function updateExportHref() {
-        $btnExportCalc.attr('href', hideZeroRows ? (exportBaseHref + '?hide_zero=1') : exportBaseHref);
+        $btnExportCalc.attr('href', CalcBasis.url(hideZeroRows ? (exportBaseHref + '?hide_zero=1') : exportBaseHref));
     }
 
     $btnToggleHideZero.on('click', function () {
@@ -155,7 +155,7 @@
         $('#calcAlert').addClass('d-none').text('');
         table.processing(true);
 
-        $.getJSON(BASE_URL + 'wip/calc-combined/data')
+        $.getJSON(CalcBasis.url(BASE_URL + 'wip/calc-combined/data'))
             .done(function (resp) {
                 if (resp.status !== 'success') {
                     $('#calcAlert').removeClass('d-none').text(resp.message || 'Failed to load data.');

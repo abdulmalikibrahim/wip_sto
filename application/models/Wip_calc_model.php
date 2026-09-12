@@ -44,13 +44,53 @@ class Wip_calc_model extends CI_Model
     }
 
     /**
+     * Which table WIP Calc reads part usage from — the Master BOM, or the
+     * Part List. Both carry the same model/suffix/shop_code/qty shape, so
+     * they're interchangeable as the calculation's basis; see
+     * docs/guidance proses hitung wip.pdf ("bisa di buat dari BOM bisa juga
+     * via part list").
+     *
+     * Whitelisted rather than passed through, since the result reaches
+     * from() directly.
+     */
+    protected function basis_table($basis)
+    {
+        return $basis === 'part_list' ? 'part_list' : 'bom';
+    }
+
+    /**
+     * SELECT list for the chosen basis. part_list has no `material` column,
+     * so it's selected as a literal empty string there — every row handed
+     * to the rest of the calculation then has the same shape either way,
+     * and no caller has to care which basis it came from.
+     *
+     * @param array $columns plain column names, as they exist on `bom`
+     */
+    protected function basis_select($basis, array $columns)
+    {
+        if ($this->basis_table($basis) === 'part_list') {
+            $columns = array_map(function ($column) {
+                return $column === 'material' ? "'' AS material" : $column;
+            }, $columns);
+        }
+
+        return implode(', ', $columns);
+    }
+
+    /** Human label for the basis, for report titles and the UI. */
+    public function basis_label($basis)
+    {
+        return $this->basis_table($basis) === 'part_list' ? 'Part List' : 'Master BOM';
+    }
+
+    /**
      * Sum BOM part usage (grouped by part_number) per shop, each part's
      * contribution counted from its own cutoff VIN (or every cached unit,
      * for parts with no cutoff set yet) up to the newest unit.
      *
      * @return array{ok:bool, message:string, cutoff_summary:array, data:array}
      */
-    public function calc($source)
+    public function calc($source, $basis = 'bom')
     {
         $shop_codes = $this->config->item('wip_calc_shop_codes')[$source] ?? array();
         if (empty($shop_codes)) {
@@ -69,12 +109,15 @@ class Wip_calc_model extends CI_Model
             $cutoff_index[$key] = $row;
         }
 
-        // BOM rows whose Shop Code lists (comma-separated, e.g. "WELD3,ASSY3,TOSO3")
-        // include at least one of this line's shop codes. FIND_IN_SET matches a
-        // single row's shop_code against a comma list — not string equality — so a
-        // part shared across shops is only stored once but counted for each shop it
-        // names. Matched case-insensitively, since upload data isn't normalized to upper.
-        $this->db->select('material, part_number, material_description, uom, model, suffix, shop_code, qty')->from('bom');
+        // Basis rows (BOM or Part List) whose Shop Code lists (comma-separated,
+        // e.g. "WELD3,ASSY3,TOSO3") include at least one of this line's shop codes.
+        // FIND_IN_SET matches a single row's shop_code against a comma list — not
+        // string equality — so a part shared across shops is only stored once but
+        // counted for each shop it names. Matched case-insensitively, since upload
+        // data isn't normalized to upper.
+        $this->db->select($this->basis_select($basis, array(
+            'material', 'part_number', 'material_description', 'uom', 'model', 'suffix', 'shop_code', 'qty',
+        )), false)->from($this->basis_table($basis));
         $this->db->group_start();
         foreach ($shop_codes as $shop_code) {
             foreach (array_unique(array($shop_code, strtoupper($shop_code), strtolower($shop_code))) as $variant) {
@@ -155,8 +198,8 @@ class Wip_calc_model extends CI_Model
                 $qty = (float) $row['qty'];
                 $key = $this->match_key($row['model'], $row['suffix']);
 
-                // Net: units from the cutoff VIN onward (or every unit if no
-                // cutoff is set yet — $boundary is null either way).
+                // Net: the cutoff VIN and every unit after it (or every unit
+                // if no cutoff is set yet — $boundary is null either way).
                 $counts = $this->get_counts($source, $shop, $boundary);
                 $unit_count = $counts[$key] ?? 0;
                 if ($unit_count > 0) {
@@ -226,14 +269,14 @@ class Wip_calc_model extends CI_Model
      *
      * @return array{ok:bool, message:string, data:array}
      */
-    public function calc_combined()
+    public function calc_combined($basis = 'bom')
     {
         $by_source = array();
         $messages = array();
         $ok = true;
 
         foreach (array('kap1', 'kap2') as $source) {
-            $result = $this->calc($source);
+            $result = $this->calc($source, $basis);
             if (!$result['ok']) {
                 $ok = false;
                 $messages[] = $result['message'];
@@ -328,7 +371,7 @@ class Wip_calc_model extends CI_Model
      *
      * @return array{ok:bool, message:string, data:array}
      */
-    public function calc_detail($source)
+    public function calc_detail($source, $basis = 'bom')
     {
         $shop_codes = $this->config->item('wip_calc_shop_codes')[$source] ?? array();
         if (empty($shop_codes)) {
@@ -347,7 +390,9 @@ class Wip_calc_model extends CI_Model
             $cutoff_index[$key] = $row;
         }
 
-        $this->db->select('material, part_number, component, material_description, uom, model, suffix, shop_code, qty')->from('bom');
+        $this->db->select($this->basis_select($basis, array(
+            'material', 'part_number', 'component', 'material_description', 'uom', 'model', 'suffix', 'shop_code', 'qty',
+        )), false)->from($this->basis_table($basis));
         $this->db->group_start();
         foreach ($shop_codes as $shop_code) {
             foreach (array_unique(array($shop_code, strtoupper($shop_code), strtolower($shop_code))) as $variant) {
@@ -379,7 +424,7 @@ class Wip_calc_model extends CI_Model
                 $boundary = null;
                 $cutoff_vin = null;
                 $cutoff_status = 'none'; // none|used|stale
-                $cutoff_position = null; // this VIN's rank (1 = newest) among ALL of the shop's cached units
+                $cutoff_position = null; // this VIN's "No" among ALL of the shop's cached units (see below)
                 $total_wip = null;
 
                 if ($cutoff !== null) {
@@ -400,9 +445,13 @@ class Wip_calc_model extends CI_Model
                         $boundary = (int) $found['id'];
                         // Position among every unit of this shop (not just ones
                         // matching this row's model/suffix) — "unit 131 of 200".
+                        // Counted in list order (oldest id first) so it matches
+                        // the "No" column of the WIP data list the cutoff was
+                        // picked from; get_counts() then sums this row and every
+                        // one after it, i.e. No 131..200 in that example.
                         $cutoff_position = (int) $this->db
                             ->where(array('source' => $source, 'shop' => $shop))
-                            ->where('id >=', $boundary)
+                            ->where('id <=', $boundary)
                             ->count_all_results('wip_data');
                     }
                 }
@@ -462,7 +511,7 @@ class Wip_calc_model extends CI_Model
      * @return array{ok:bool, message?:string, part_number?:string, material_description?:string,
      *     shop_label?:string, shop_code?:string, cutoff?:array|null, total_wip?:int, suffixes?:array, grand_subtotal?:string}
      */
-    public function part_breakdown($source, $shop_code_raw, $part_number_raw)
+    public function part_breakdown($source, $shop_code_raw, $part_number_raw, $basis = 'bom')
     {
         $resolved = $this->resolve_shop_code($shop_code_raw);
         if ($resolved === null || $resolved['source'] !== $source) {
@@ -493,9 +542,10 @@ class Wip_calc_model extends CI_Model
 
             if ($found) {
                 $boundary = (int) $found['id'];
+                // Same "No"-aligned position as calc_detail() — see the note there.
                 $position = (int) $this->db
                     ->where(array('source' => $source, 'shop' => $shop))
-                    ->where('id >=', $boundary)
+                    ->where('id <=', $boundary)
                     ->count_all_results('wip_data');
                 $cutoff_info = array('vin' => $cutoff['vin'], 'status' => 'used', 'position' => $position, 'total' => $total_wip);
             } else {
@@ -503,13 +553,18 @@ class Wip_calc_model extends CI_Model
             }
         }
 
-        // Every BOM line for this part_number (or, for parts with a blank
+        // Every basis line for this part_number (or, for parts with a blank
         // part_number, its material code) in this shop — every suffix it's
         // defined for, regardless of whether any WIP unit currently matches.
-        $this->db->select('material, material_description, model, suffix, qty')->from('bom');
+        $this->db->select($this->basis_select($basis, array(
+            'material', 'material_description', 'model', 'suffix', 'qty',
+        )), false)->from($this->basis_table($basis));
         $this->db->group_start();
         $this->db->where('part_number', $part_number);
-        $this->db->or_group_start()->where('part_number', '')->where('material', $part_number)->group_end();
+        if ($this->basis_table($basis) === 'bom') {
+            // Only BOM carries a `material` column to fall back on.
+            $this->db->or_group_start()->where('part_number', '')->where('material', $part_number)->group_end();
+        }
         $this->db->group_end();
         $this->db->group_start();
         foreach (array_unique(array($shop_code, strtoupper($shop_code), strtolower($shop_code))) as $variant) {
@@ -519,7 +574,7 @@ class Wip_calc_model extends CI_Model
         $bom_rows = $this->db->order_by('model', 'asc')->order_by('suffix', 'asc')->get()->result_array();
 
         if (empty($bom_rows)) {
-            return array('ok' => false, 'message' => 'No BOM lines found for this part in this shop.');
+            return array('ok' => false, 'message' => 'No ' . $this->basis_label($basis) . ' lines found for this part in this shop.');
         }
 
         $material_description = $bom_rows[0]['material_description'];
@@ -558,13 +613,101 @@ class Wip_calc_model extends CI_Model
     }
 
     /**
+     * The actual cached wip_data rows behind one (part_number, shop, model,
+     * suffix) suffix row's "Matching Units" count in part_breakdown() —
+     * powers a "show me the VINs" drill-down so a count that looks off
+     * against a hand-counted list (e.g. Excel) can be checked unit by unit.
+     * Uses the part's own cutoff VIN as the boundary, same as part_breakdown().
+     *
+     * @return array{ok:bool, message?:string, part_number?:string, model?:string,
+     *     suffix?:string, shop_label?:string, unit_count?:int, vins?:array}
+     */
+    public function part_breakdown_vins($source, $shop_code_raw, $part_number_raw, $model, $suffix)
+    {
+        $resolved = $this->resolve_shop_code($shop_code_raw);
+        if ($resolved === null || $resolved['source'] !== $source) {
+            return array('ok' => false, 'message' => 'Unknown Shop for this KAP line.');
+        }
+        $shop = $resolved['shop'];
+        $shop_code = $resolved['shop_code'];
+
+        $part_number = trim((string) $part_number_raw);
+        if ($part_number === '') {
+            return array('ok' => false, 'message' => 'Part Number is required.');
+        }
+
+        $cutoff = $this->db
+            ->where(array('shop_code' => $shop_code, 'part_number' => $part_number))
+            ->get($this->table)->row_array();
+
+        $boundary = null;
+        if ($cutoff) {
+            $found = $this->db->select('id')
+                ->where(array('source' => $source, 'shop' => $shop, 'vin' => $cutoff['vin']))
+                ->get('wip_data')->row_array();
+            if ($found) {
+                $boundary = (int) $found['id'];
+            }
+        }
+
+        $this->db->select('id, vin, sfx, katashiki, modelcode')
+            ->where(array('source' => $source, 'shop' => $shop));
+        if ($boundary !== null) {
+            $this->db->where('id >=', $boundary);
+        }
+        $wip_rows = $this->db->order_by('id', 'asc')->get('wip_data')->result_array();
+
+        // id -> SEQUENCE for the whole shop, so each listed row can show the
+        // same number the Master WIP list does. Built from the full ordered
+        // id list rather than arithmetic on the ids, so gaps (from deleted
+        // rows) can't shift it.
+        $seq_of = array();
+        $all_ids = $this->db->select('id')
+            ->where(array('source' => $source, 'shop' => $shop))
+            ->order_by('id', 'asc')->get('wip_data')->result_array();
+        foreach ($all_ids as $i => $r) {
+            $seq_of[(int) $r['id']] = $i + 1;
+        }
+
+        $key = $this->match_key($model, $suffix);
+        $matches = array();
+        foreach ($wip_rows as $row) {
+            if ($this->match_key($row['modelcode'], $row['sfx']) === $key) {
+                $row['seq'] = $seq_of[(int) $row['id']] ?? null;
+                $matches[] = $row;
+            }
+        }
+
+        // Flag VINs cached more than once for this shop — the usual reason a
+        // count here reads higher than a hand-counted list, since the same
+        // physical unit then gets counted twice.
+        $vin_counts = array_count_values(array_map(function ($r) {
+            return $r['vin'];
+        }, $matches));
+        foreach ($matches as &$m) {
+            $m['duplicate'] = ($vin_counts[$m['vin']] ?? 0) > 1;
+        }
+        unset($m);
+
+        return array(
+            'ok'          => true,
+            'part_number' => $part_number,
+            'model'       => $model,
+            'suffix'      => $suffix,
+            'shop_label'  => $this->config->item('wip_shop_labels')[$shop] ?? strtoupper($shop),
+            'unit_count'  => count($matches),
+            'vins'        => $matches,
+        );
+    }
+
+    /**
      * Stream the row-level calc_detail() breakdown as a formatted .xlsx
      * report, same visual style as export() plus a Cutoff VIN / Formula
      * trail per row and a single Grand Total row.
      */
-    public function export_detail($source, $title)
+    public function export_detail($source, $title, $basis = 'bom')
     {
-        $result = $this->calc_detail($source);
+        $result = $this->calc_detail($source, $basis);
         if (!$result['ok']) {
             show_error($result['message'], 502, 'WIP Calc unavailable');
 
@@ -690,9 +833,9 @@ class Wip_calc_model extends CI_Model
      * styled header, zebra-striped rows, a Grand Total row, print setup
      * (landscape, header repeated on every page) — straight to the browser.
      */
-    public function export($source, $title, $hide_zero = false, $shop_filter = '')
+    public function export($source, $title, $hide_zero = false, $shop_filter = '', $basis = 'bom')
     {
-        $result = $this->calc($source);
+        $result = $this->calc($source, $basis);
         if (!$result['ok']) {
             show_error($result['message'], 502, 'WIP Calc unavailable');
 
@@ -916,9 +1059,9 @@ class Wip_calc_model extends CI_Model
      * Source column (KAP1/KAP2) since rows from both lines are mixed
      * together here.
      */
-    public function export_combined($title, $hide_zero = false)
+    public function export_combined($title, $hide_zero = false, $basis = 'bom')
     {
-        $result = $this->calc_combined();
+        $result = $this->calc_combined($basis);
         if (!$result['ok']) {
             show_error($result['message'], 502, 'WIP Calc unavailable');
 
@@ -1306,7 +1449,7 @@ class Wip_calc_model extends CI_Model
      *
      * @return array{ok:bool, message:string, shop_code?:string, vin?:string, applied?:int}
      */
-    public function set_shop_cutoff($source, $shop, $vin_raw, $user_id)
+    public function set_shop_cutoff($source, $shop, $vin_raw, $user_id, $basis = 'bom')
     {
         $shop_codes = $this->config->item('wip_calc_shop_codes')[$source] ?? array();
         if (!isset($shop_codes[$shop])) {
@@ -1322,7 +1465,7 @@ class Wip_calc_model extends CI_Model
             return array('ok' => false, 'message' => "VIN not found in the cached Master WIP data for {$shop_code}. Pull or upload that shop's WIP data first.");
         }
 
-        $part_numbers = $this->bom_part_numbers_for_shop($shop_code);
+        $part_numbers = $this->bom_part_numbers_for_shop($shop_code, $basis);
         if (empty($part_numbers)) {
             return array('ok' => false, 'message' => "No BOM parts found for {$shop_code}.");
         }
@@ -1341,9 +1484,10 @@ class Wip_calc_model extends CI_Model
     }
 
     /** Distinct part numbers (BOM part_number, falling back to material) whose Shop Code lists $shop_code. */
-    protected function bom_part_numbers_for_shop($shop_code)
+    protected function bom_part_numbers_for_shop($shop_code, $basis = 'bom')
     {
-        $this->db->select('part_number, material')->from('bom');
+        $this->db->select($this->basis_select($basis, array('part_number', 'material')), false)
+            ->from($this->basis_table($basis));
         $this->db->group_start();
         foreach (array_unique(array($shop_code, strtoupper($shop_code), strtolower($shop_code))) as $variant) {
             $this->db->or_where('FIND_IN_SET(' . $this->db->escape($variant) . ', shop_code) >', 0);
@@ -1437,7 +1581,7 @@ class Wip_calc_model extends CI_Model
      * under that shop, Shop Code filled in, VIN left blank — so the user
      * only has to type in the VIN column and re-upload.
      */
-    public function download_template($source, $shop = '')
+    public function download_template($source, $shop = '', $basis = 'bom')
     {
         $shop_codes = $this->config->item('wip_calc_shop_codes')[$source] ?? array();
         $shop = trim((string) $shop);
@@ -1458,7 +1602,7 @@ class Wip_calc_model extends CI_Model
         $r = 2;
         if ($shop !== '') {
             $shop_code = $shop_codes[$shop];
-            $part_numbers = $this->bom_part_numbers_for_shop($shop_code);
+            $part_numbers = $this->bom_part_numbers_for_shop($shop_code, $basis);
             sort($part_numbers, SORT_NATURAL | SORT_FLAG_CASE);
             foreach ($part_numbers as $part_number) {
                 $sheet->fromArray(array($part_number, '', strtoupper($shop_code)), null, "A{$r}");
