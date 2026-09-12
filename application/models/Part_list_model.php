@@ -319,7 +319,9 @@ class Part_list_model extends CI_Model
     /**
      * Parse an uploaded "pivot" Part List file: Part No / Part Name / Shop
      * / Model, then one column per Suffix (header = the Suffix code, cell
-     * = that part's Qty at that suffix, blank = not used there).
+     * = that part's Qty at that suffix, blank = not used there). A cell
+     * holding 0 is treated the same as blank — a 0 qty means the part
+     * isn't actually used at that suffix, so no row is created for it.
      *
      * Each Suffix's Model is resolved from Master BOM's own Suffix->Model
      * data (see resolve_model_for_suffix()) — not from this file's own
@@ -358,6 +360,17 @@ class Part_list_model extends CI_Model
         try {
             $reader = IOFactory::createReaderForFile($file_path);
             $reader->setReadDataOnly(true);
+            // Without this, a large single-line sheet XML (the real
+            // pivot file's is ~20MB with ~140 columns) can trip libxml's
+            // default "huge input" guard — silently returning an EMPTY
+            // sheet with no error/exception, which then fails header
+            // validation for a completely unrelated-looking reason.
+            // Reproduced locally; whether it bites depends on the
+            // server's libxml build, which is why this only failed on
+            // some machines and not others for the exact same file.
+            if (method_exists($reader, 'setParseHuge')) {
+                $reader->setParseHuge(true);
+            }
             $spreadsheet = $reader->load($file_path);
         } catch (\Throwable $e) {
             return array('ok' => false, 'message' => 'Unable to read the Excel file: ' . $e->getMessage());
@@ -378,6 +391,20 @@ class Part_list_model extends CI_Model
         }
 
         if (!$this->header_matches($headerCells)) {
+            // A real pivot file (Part No/Part Name/Shop/Model + many Suffix
+            // columns) that comes back with only 1 row / column A detected
+            // isn't a bad template — the sheet failed to load at all
+            // (observed under memory pressure on a large ~20MB single-line
+            // sheet XML: PhpSpreadsheet/libxml can silently hand back an
+            // empty sheet instead of throwing). Tell the user to retry
+            // rather than pointing them at their (likely fine) file.
+            if ($highestRow <= 1 && $highestCol === 'A') {
+                return array(
+                    'ok' => false,
+                    'message' => 'The Excel file appears to have loaded empty (this can happen under heavy server load on a large file). Please try uploading again; if it keeps happening, ask an admin to check server memory.',
+                );
+            }
+
             return array(
                 'ok' => false,
                 'message' => 'Invalid template. Expected the first columns to be: ' . implode(', ', $this->required_headers) . ', followed by one column per Suffix.',
@@ -429,6 +456,10 @@ class Part_list_model extends CI_Model
                 }
 
                 $qty = (float) $value;
+                if ($qty == 0.0) {
+                    continue; // a 0 qty means the part isn't actually used at this suffix — treat like blank
+                }
+
                 $model = $suffix_model_map[strtoupper($suffix)] ?? '';
                 if ($model === '') {
                     $unresolved_suffix_set[$suffix] = true;

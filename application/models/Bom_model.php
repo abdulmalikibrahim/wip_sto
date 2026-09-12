@@ -235,6 +235,14 @@ class Bom_model extends CI_Model
         try {
             $reader = IOFactory::createReaderForFile($file_path);
             $reader->setReadDataOnly(true);
+            // Without this, a large single-line sheet XML can trip
+            // libxml's default "huge input" guard — silently returning an
+            // EMPTY sheet with no error, which then fails header
+            // validation for a completely unrelated-looking reason. Hits
+            // some servers and not others depending on the libxml build.
+            if (method_exists($reader, 'setParseHuge')) {
+                $reader->setParseHuge(true);
+            }
             $spreadsheet = $reader->load($file_path);
         } catch (\Throwable $e) {
             return array('ok' => false, 'message' => 'Unable to read the Excel file: ' . $e->getMessage());
