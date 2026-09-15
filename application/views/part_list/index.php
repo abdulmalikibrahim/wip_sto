@@ -215,9 +215,11 @@
                     <div class="mb-2">
                         <label class="form-label small">Upload Mode</label>
                         <select name="mode" class="form-select form-select-sm">
-                            <option value="append">Append (add to existing data)</option>
+                            <option value="upsert" selected>Upsert (add new rows, update existing ones)</option>
+                            <option value="append">Append (add new rows only, keep existing ones as they are)</option>
                             <option value="replace">Replace (clear existing data first)</option>
                         </select>
+                        <div class="form-text">A row already exists when <strong>Model + Suffix + Part Number + Shop Code</strong> all match.</div>
                     </div>
                 </div>
                 <div class="modal-footer">

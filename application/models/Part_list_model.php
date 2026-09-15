@@ -594,10 +594,15 @@ class Part_list_model extends CI_Model
      * upload appended duplicates, and WIP Calc on the Part List basis then
      * counted a duplicated part's usage once per copy.
      *
-     * @return array{inserted:int, updated:int, skipped:int}
+     * $mode 'append' uses the same identity but leaves a row that is already
+     * there untouched (only new rows are added); 'upsert' — and 'replace',
+     * which starts from an empty table — refreshes it.
+     *
+     * @return array{inserted:int, updated:int, unchanged:int, skipped:int}
      */
-    public function insert_rows(array $rows)
+    public function insert_rows(array $rows, $mode = 'upsert')
     {
+        $refresh = $mode !== 'append';
         $skipped = 0;
         $written = 0;
         $now = date('Y-m-d H:i:s');
@@ -625,23 +630,29 @@ class Part_list_model extends CI_Model
             );
 
             if (count($batch) >= 500) {
-                $this->upsert_batch($batch);
+                $this->upsert_batch($batch, $refresh);
                 $written += count($batch);
                 $batch = array();
             }
         }
 
         if (!empty($batch)) {
-            $this->upsert_batch($batch);
+            $this->upsert_batch($batch, $refresh);
             $written += count($batch);
         }
 
         // A row that was already there leaves the table size unchanged, so the
-        // growth is the insert count and the rest were updates — cheaper than
-        // asking the database about every single row.
+        // growth is the insert count and the rest already existed (updated, or
+        // left as-is in append mode) — cheaper than asking about every row.
         $inserted = max(0, $this->count_all() - $before);
+        $existing = max(0, $written - $inserted);
 
-        return array('inserted' => $inserted, 'updated' => max(0, $written - $inserted), 'skipped' => $skipped);
+        return array(
+            'inserted'  => $inserted,
+            'updated'   => $refresh ? $existing : 0,
+            'unchanged' => $refresh ? 0 : $existing,
+            'skipped'   => $skipped,
+        );
     }
 
     /**
@@ -652,7 +663,7 @@ class Part_list_model extends CI_Model
      * `created_at` is deliberately left alone on update, so a refreshed row
      * keeps the date it first arrived.
      */
-    protected function upsert_batch(array $batch)
+    protected function upsert_batch(array $batch, $refresh = true)
     {
         if (empty($batch)) {
             return;
@@ -668,9 +679,13 @@ class Part_list_model extends CI_Model
             $tuples[] = '(' . implode(',', $values) . ')';
         }
 
-        $updates = array();
-        foreach (array('component', 'material_description', 'qty', 'uom', 'updated_at') as $column) {
-            $updates[] = "`{$column}` = VALUES(`{$column}`)";
+        // Append: a row already present stays exactly as it is ("id = id" is a no-op update).
+        $updates = array('`id` = `id`');
+        if ($refresh) {
+            $updates = array();
+            foreach (array('component', 'material_description', 'qty', 'uom', 'updated_at') as $column) {
+                $updates[] = "`{$column}` = VALUES(`{$column}`)";
+            }
         }
 
         $this->db->query(
@@ -682,8 +697,21 @@ class Part_list_model extends CI_Model
 
     public function log_upload($data)
     {
+        // 'upsert' needs 2026_09_15_part_list_upload_log_upsert_mode.sql; until it
+        // has run the enum rejects it, so log such an upload as 'append' instead.
+        if (($data['mode'] ?? '') === 'upsert' && !$this->log_accepts_upsert()) {
+            $data['mode'] = 'append';
+        }
+
         $data['created_at'] = date('Y-m-d H:i:s');
         $this->db->insert('part_list_upload_log', $data);
+    }
+
+    protected function log_accepts_upsert()
+    {
+        $column = $this->db->query("SHOW COLUMNS FROM `part_list_upload_log` LIKE 'mode'")->row_array();
+
+        return $column && strpos($column['Type'], "'upsert'") !== false;
     }
 
     /**

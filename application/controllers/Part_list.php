@@ -150,7 +150,13 @@ class Part_list extends MY_Controller
         }
 
         $uploaded = $this->upload->data();
-        $mode = $this->input->post('mode') === 'replace' ? 'replace' : 'append';
+        // upsert = add new rows + update existing ones; append = add new rows only;
+        // replace = clear the table first. A row "exists" when Model + Suffix +
+        // Part Number + Shop Code match (see Part_list_model::insert_rows()).
+        $mode = $this->input->post('mode');
+        if (!in_array($mode, array('upsert', 'append', 'replace'), true)) {
+            $mode = 'upsert';
+        }
 
         $parsed = $this->Part_list_model->parse_excel($uploaded['full_path']);
 
@@ -171,7 +177,7 @@ class Part_list extends MY_Controller
             $this->Part_list_model->truncate();
         }
 
-        $result = $this->Part_list_model->insert_rows($parsed['rows']);
+        $result = $this->Part_list_model->insert_rows($parsed['rows'], $mode);
         @unlink($uploaded['full_path']);
 
         // Extra notes from parsing the pivot format — non-numeric cells
@@ -192,9 +198,12 @@ class Part_list extends MY_Controller
             $notes[] = "{$parsed['blank_model_cells']} cell(s) across {$count} Suffix column(s) had a blank Model in the uploaded file: {$sample}{$more}.";
         }
 
-        $message = "Part List uploaded: {$result['inserted']} rows inserted, {$result['updated']} updated, {$result['skipped']} skipped.";
+        $message = 'Part List uploaded (' . ucfirst($mode) . "): {$result['inserted']} rows inserted, {$result['updated']} updated, {$result['skipped']} skipped.";
         if ($result['updated'] > 0) {
             $notes[] = "Rows already present (same Model + Suffix + Part Number + Shop Code) were refreshed in place rather than added again.";
+        }
+        if ($result['unchanged'] > 0) {
+            $notes[] = "{$result['unchanged']} row(s) already present (same Model + Suffix + Part Number + Shop Code) were left unchanged — use Upsert to update them.";
         }
         if ($notes) {
             $message .= ' ' . implode(' ', $notes);
