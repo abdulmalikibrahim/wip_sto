@@ -79,6 +79,9 @@ $units_text = function ($card) use ($stages, $label_of) {
         </div>
     </div>
     <div class="d-flex flex-wrap align-items-center gap-2">
+        <a href="<?= base_url('wip/summary/missing-cutoff') ?>" class="btn btn-sm btn-outline-warning" title="Part yang Summary-nya terisi padahal cutoff VIN shop sendiri belum ada">
+            <i class="bi bi-exclamation-diamond"></i> Tanpa Cutoff VIN
+        </a>
         <button type="button" class="btn btn-sm btn-primary" id="btnToggleHideZero" title="Zero rows are hidden automatically — click to show them">
             <i class="bi bi-eye"></i> Hide Zero Rows
         </button>

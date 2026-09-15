@@ -145,6 +145,10 @@ $route['wip/kap2/calc/cutoff/shop'] = 'wip/kap2_calc_cutoff_set_shop';
 $route['wip/summary'] = 'wip/summary';
 $route['wip/summary/data'] = 'wip/summary_data';
 $route['wip/summary/export'] = 'wip/summary_export';
+$route['wip/summary/missing-cutoff'] = 'wip/summary_missing';
+$route['wip/summary/missing-cutoff/data'] = 'wip/summary_missing_data';
+$route['wip/summary/missing-cutoff/detail'] = 'wip/summary_missing_detail';
+$route['wip/summary/missing-cutoff/export'] = 'wip/summary_missing_export';
 
 // Akun (CRUD)
 $route['akun'] = 'akun/index';

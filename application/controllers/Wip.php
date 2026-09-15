@@ -645,6 +645,60 @@ class Wip extends MY_Controller
         return in_array($scope, array('kap1', 'kap2'), true) ? $scope : 'all';
     }
 
+    /**
+     * "Summary Tanpa Cutoff VIN" — the WIP Summary parts that still show a
+     * value on a card while that card's own shop has no usable cutoff VIN
+     * (e.g. a Toso part with no Toso cutoff, counted only from Assy units),
+     * listed with detail for analysis. See Wip_calc_model::missing_cutoff().
+     */
+    public function summary_missing()
+    {
+        $this->load->model('Wip_calc_model');
+        $data['title'] = 'Summary Tanpa Cutoff VIN';
+        $data['shops'] = $this->Wip_calc_model->summary_labels();
+        $data['stages'] = $this->Wip_calc_model->summary_stages();
+        $data['page_js'] = 'assets/js/wip_summary_missing.js';
+        $this->render('wip/summary_missing', $data, 'wip_summary_missing');
+    }
+
+    public function summary_missing_data()
+    {
+        $this->load->model('Wip_calc_model');
+        $result = $this->Wip_calc_model->missing_cutoff($this->summary_scope(), $this->calc_basis());
+
+        $this->output
+            ->set_content_type('application/json')
+            ->set_output(json_encode(array(
+                'status'  => $result['ok'] ? 'success' : 'error',
+                'message' => $result['message'],
+                'data'    => $result['data'],
+            )));
+    }
+
+    /** Per Model / Suffix breakdown of one row (AJAX, the Detail modal). */
+    public function summary_missing_detail()
+    {
+        $this->load->model('Wip_calc_model');
+        $result = $this->Wip_calc_model->missing_cutoff_detail(
+            $this->input->get('source') === 'kap2' ? 'kap2' : 'kap1',
+            (string) $this->input->get('card'),
+            (string) $this->input->get('part_number'),
+            $this->calc_basis()
+        );
+        $this->output->set_content_type('application/json')->set_output(json_encode($result));
+    }
+
+    public function summary_missing_export()
+    {
+        $this->load->model('Wip_calc_model');
+        $this->Wip_calc_model->export_missing_cutoff(
+            $this->summary_scope(),
+            (string) $this->input->get('card'),
+            (string) $this->input->get('status'),
+            $this->calc_basis()
+        );
+    }
+
     protected function handle_calc_cutoff_set($source)
     {
         $this->require_admin();

@@ -56,6 +56,9 @@ $is_admin = ($auth_user['role'] ?? '') === 'admin';
         <a class="nav-link <?= $active_menu === 'wip_summary' ? 'active' : '' ?>" href="<?= base_url('wip/summary') ?>">
             <i class="bi bi-bar-chart-steps"></i> WIP Summary
         </a>
+        <a class="nav-link <?= $active_menu === 'wip_summary_missing' ? 'active' : '' ?>" href="<?= base_url('wip/summary/missing-cutoff') ?>">
+            <i class="bi bi-exclamation-diamond"></i> Summary Tanpa Cutoff
+        </a>
 
         <?php if ($is_admin): ?>
         <div class="nav-section-label">Administration</div>

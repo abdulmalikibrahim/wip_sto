@@ -1196,9 +1196,14 @@ class Wip_calc_model extends CI_Model
      * are in scope). With $scope 'all', KAP1 and KAP2 are summed per
      * part_number.
      *
+     * $with_state (for missing_cutoff(), one line at a time) also adds per
+     * card: <card>_vin_state ('none' / 'stale' / 'ok'), <card>_vin_raw (the
+     * cutoff VIN as set, even when stale) and <card>_own_gross (every unit
+     * in the card's own shop, i.e. what Net would be from the oldest unit).
+     *
      * @return array{ok:bool, message:string, stages:array, totals:array, parts:array, data:array}
      */
-    public function summary($scope = 'all', $basis = 'bom')
+    public function summary($scope = 'all', $basis = 'bom', $with_state = false)
     {
         $sources = in_array($scope, array('kap1', 'kap2'), true) ? array($scope) : array('kap1', 'kap2');
         $stages = $this->summary_stages();
@@ -1286,9 +1291,12 @@ class Wip_calc_model extends CI_Model
                         'source_set'           => array(),
                         'juklak_main'          => null,
                         'vin_set'              => array(), // card => [KAP line => cutoff VIN used there]
+                        'vin_state'            => array(), // card => none / stale / ok ($with_state only)
+                        'vin_raw'              => array(), // card => cutoff VIN as set ($with_state only)
                     );
                     foreach ($stages as $card => $units) {
                         $acc[$part_number]['in_' . $card] = false;
+                        $acc[$part_number][$card . '_own_gross'] = 0.0;
                         foreach ($units as $unit_shop) {
                             $acc[$part_number][$card . '__' . $unit_shop] = 0.0;
                         }
@@ -1337,6 +1345,14 @@ class Wip_calc_model extends CI_Model
                         if ($boundary_of[$vin_key] !== null) { // same as calc(): only a VIN still cached is shown
                             $acc[$part_number]['vin_set'][$card][strtoupper($source)] = $vin;
                         }
+                    }
+
+                    if ($with_state) {
+                        $acc[$part_number]['vin_state'][$card] = $vin === null ? 'none' : ($boundary_of[$vin_key] === null ? 'stale' : 'ok');
+                        $acc[$part_number]['vin_raw'][$card] = $vin;
+                        $all_units = $this->unit_counts($source, $own, null);
+                        $gross_add = $this->qty_once('gross|' . $card . '|' . $part_key . '|' . $key, $qty);
+                        $acc[$part_number][$card . '_own_gross'] += ($all_units[$key] ?? 0) * $gross_add;
                     }
 
                     foreach ($stages[$card] as $unit_shop) {
@@ -1400,8 +1416,16 @@ class Wip_calc_model extends CI_Model
                     $parts[$card]++;
                 }
                 $row['sum_' . $card] = $this->trim_qty($sum);
+
+                if ($with_state) {
+                    $row[$card . '_vin_state'] = $row['vin_state'][$card] ?? null;
+                    $row[$card . '_vin_raw'] = $row['vin_raw'][$card] ?? null;
+                    $row[$card . '_own_gross'] = $this->trim_qty($row[$card . '_own_gross']);
+                } else {
+                    unset($row[$card . '_own_gross']);
+                }
             }
-            unset($row['vin_set']);
+            unset($row['vin_set'], $row['vin_state'], $row['vin_raw']);
 
             // "Total" card: every card's value for this part added up — no card filter.
             $row_total = 0.0;
@@ -1434,6 +1458,361 @@ class Wip_calc_model extends CI_Model
         }
 
         return $scope === 'kap2' ? 'KAP 2' : 'KAP 1 & 2';
+    }
+
+    /**
+     * "Summary Tanpa Cutoff VIN" — the WIP Summary rows whose card value is
+     * non-zero while the card's own shop has no usable cutoff VIN: none set
+     * (own shop Net 0, so the whole value comes from the later shops — e.g.
+     * a TOSO3 part with no Toso cutoff still getting 77 from Assy units), or
+     * a stale VIN (no longer cached, so every own-shop unit is counted).
+     * One row per KAP line × card × part; Juklak parts (counted 0) are left
+     * out. Value keys: own_gross (every own-shop unit), own_counted (what the
+     * card counts there), v_weld / v_toso / v_assy (the later shops; null when
+     * the card doesn't count that shop) and summary (the card's value).
+     *
+     * @return array{ok:bool, message:string, stages:array, data:array}
+     */
+    public function missing_cutoff($scope = 'all', $basis = 'bom')
+    {
+        $sources = in_array($scope, array('kap1', 'kap2'), true) ? array($scope) : array('kap1', 'kap2');
+        $stages = $this->summary_stages();
+        $labels = $this->summary_labels();
+        $card_order = array_flip(array_keys($stages));
+
+        $data = array();
+        foreach ($sources as $source) {
+            // One line at a time, so each row's cutoff state belongs to exactly one line.
+            $result = $this->summary($source, $basis, true);
+            if (!$result['ok']) {
+                return array('ok' => false, 'message' => $result['message'], 'stages' => $stages, 'data' => array());
+            }
+
+            foreach ($result['data'] as $row) {
+                if ($row['juklak_main'] !== null) {
+                    continue;
+                }
+                foreach ($stages as $card => $units) {
+                    $state = $row[$card . '_vin_state'];
+                    if (!$row['in_' . $card] || $state === null || $state === 'ok' || (float) $row['sum_' . $card] <= 0) {
+                        continue;
+                    }
+
+                    $own = $units[0];
+                    $item = array(
+                        'source'               => strtoupper($source),
+                        'card'                 => $card,
+                        'card_label'           => $labels[$card] ?? strtoupper($card),
+                        'own_shop'             => $own,
+                        'own_label'            => $labels[$own] ?? strtoupper($own),
+                        'part_number'          => $row['part_number'],
+                        'material_description' => $row['material_description'],
+                        'uom'                  => $row['uom'],
+                        'shop_code'            => $row['shop_code'],
+                        'vin_state'            => $state,
+                        'cutoff_vin'           => $row[$card . '_vin_raw'],
+                        'own_gross'            => $row[$card . '_own_gross'],
+                        'own_counted'          => $row[$card . '__' . $own],
+                    );
+                    foreach (array('weld', 'toso', 'assy') as $shop) {
+                        $item['v_' . $shop] = ($shop !== $own && in_array($shop, $units, true)) ? $row[$card . '__' . $shop] : null;
+                    }
+                    $item['summary'] = $row['sum_' . $card];
+                    $data[] = $item;
+                }
+            }
+        }
+
+        usort($data, function ($a, $b) use ($card_order) {
+            return strcmp($a['source'], $b['source'])
+                ?: ($card_order[$a['card']] - $card_order[$b['card']])
+                ?: strnatcasecmp($a['part_number'], $b['part_number']);
+        });
+
+        return array('ok' => true, 'message' => 'ok', 'stages' => $stages, 'data' => $data);
+    }
+
+    /** Human label for a card's cutoff state in missing_cutoff(). */
+    public function cutoff_state_label($state)
+    {
+        if ($state === 'stale') {
+            return 'Cutoff VIN stale (tidak ada di data WIP)';
+        }
+
+        return $state === 'none' ? 'Belum ada cutoff VIN' : 'Ada cutoff VIN';
+    }
+
+    /**
+     * Per Model / Suffix breakdown of one missing_cutoff() row (AJAX, the
+     * "Detail" modal): for every unit shop the card counts, how many cached
+     * units match (all) and how many of them the card counts (counted — 0 in
+     * the own shop while no cutoff is set), each × the suffix's largest Qty
+     * (as qty_once()), so the Summary value can be traced shop by shop.
+     *
+     * @return array
+     */
+    public function missing_cutoff_detail($source, $card, $part_number_raw, $basis = 'bom')
+    {
+        $stages = $this->summary_stages();
+        $shop_codes = $this->config->item('wip_calc_shop_codes')[$source] ?? array();
+        $part_number = trim((string) $part_number_raw);
+        if (empty($shop_codes) || !isset($stages[$card]) || $part_number === '') {
+            return array('ok' => false, 'message' => 'Unknown line, card or part number.');
+        }
+
+        $labels = $this->summary_labels();
+        $part_key = strtoupper($part_number);
+        $units = $stages[$card];
+        $own = $units[0];
+        $is_list = isset(((array) $this->config->item('wos_types'))[$card]);
+        // IPI / FTI cards hold the part's Welding rows (see summary()).
+        $code = strtoupper($shop_codes[$is_list ? 'weld' : $card]);
+
+        $juklak_main = $this->juklak_replaced($source)[$part_key] ?? null;
+        if ($juklak_main !== null) {
+            return array('ok' => false, 'message' => 'Part ini Juklak (diwakili main part ' . $juklak_main . '), jadi dihitung 0.');
+        }
+
+        // The cutoff VIN in the card's own shop — the same lookup as summary().
+        $vin = null;
+        if ($is_list) {
+            if ($this->db->table_exists('ippi_fti') && $this->db->field_exists('wos_type', 'ippi_fti')) {
+                $found = $this->db->select('cutoff_vin')
+                    ->where(array('plant' => $source, 'wos_type' => $card, 'part_number' => $part_number))
+                    ->get('ippi_fti')->row_array();
+                $vin = $found['cutoff_vin'] ?? null;
+            }
+        } else {
+            $found = $this->db->select('vin')
+                ->where(array('shop_code' => $code, 'part_number' => $part_number))
+                ->get($this->table)->row_array();
+            $vin = $found['vin'] ?? null;
+        }
+        $vin = ($vin === null || $vin === '') ? null : $vin;
+        $boundary = $vin !== null ? $this->unit_vin_id($source, $own, $vin) : null;
+        $state = $vin === null ? 'none' : ($boundary === null ? 'stale' : 'ok');
+
+        $this->db->select($this->basis_select($basis, array(
+            'material', 'part_number', 'material_description', 'model', 'suffix', 'shop_code', 'qty',
+        )), false)->from($this->basis_table($basis));
+        if ($this->basis_table($basis) === 'bom') {
+            // A BOM row with a blank part_number is keyed by its material (as in summary()).
+            $this->db->group_start()
+                ->where('part_number', $part_number)
+                ->or_group_start()->where('part_number', '')->where('material', $part_number)->group_end()
+                ->group_end();
+        } else {
+            $this->db->where('part_number', $part_number);
+        }
+
+        $suffixes = array();
+        $description = '';
+        foreach ($this->db->get()->result_array() as $row) {
+            $row_shops = array_map('strtoupper', array_filter(array_map('trim', explode(',', (string) $row['shop_code']))));
+            if (!in_array($code, $row_shops, true)) {
+                continue;
+            }
+            if ($description === '') {
+                $description = (string) $row['material_description'];
+            }
+            $key = $this->match_key($row['model'], $row['suffix']);
+            $qty = (float) $row['qty'];
+            if (!isset($suffixes[$key])) {
+                $suffixes[$key] = array('model' => trim((string) $row['model']), 'suffix' => trim((string) $row['suffix']), 'qty' => $qty);
+            } else {
+                $suffixes[$key]['qty'] = max($suffixes[$key]['qty'], $qty); // each suffix once, at its largest Qty
+            }
+        }
+        if (empty($suffixes)) {
+            return array('ok' => false, 'message' => 'Part ini tidak punya baris ' . $this->basis_label($basis) . ' dengan Shop Code ' . $code . '.');
+        }
+        uasort($suffixes, function ($a, $b) {
+            return strnatcasecmp($a['model'], $b['model']) ?: strnatcasecmp($a['suffix'], $b['suffix']);
+        });
+
+        $unit_totals = array_fill_keys($units, array('all' => 0.0, 'counted' => 0.0));
+        $grand = 0.0;
+        $out = array();
+        foreach ($suffixes as $key => $s) {
+            $cells = array();
+            $subtotal = 0.0;
+            foreach ($units as $unit_shop) {
+                $all = $this->unit_counts($source, $unit_shop, null)[$key] ?? 0;
+                if ($unit_shop !== $own || $state === 'stale') {
+                    $counted = $all; // later shops (and a stale own shop) count every unit
+                } elseif ($state === 'none') {
+                    $counted = 0;
+                } else {
+                    $counted = $this->unit_counts($source, $unit_shop, $boundary)[$key] ?? 0;
+                }
+                $cells[$unit_shop] = array('all' => $all, 'counted' => $counted);
+                $subtotal += $counted * $s['qty'];
+                $unit_totals[$unit_shop]['all'] += $all * $s['qty'];
+                $unit_totals[$unit_shop]['counted'] += $counted * $s['qty'];
+            }
+            $grand += $subtotal;
+            $out[] = array(
+                'model'    => $s['model'],
+                'suffix'   => $s['suffix'],
+                'qty'      => $this->trim_qty($s['qty']),
+                'units'    => $cells,
+                'subtotal' => $this->trim_qty($subtotal),
+            );
+        }
+        foreach ($unit_totals as $unit_shop => $t) {
+            $unit_totals[$unit_shop] = array('all' => $this->trim_qty($t['all']), 'counted' => $this->trim_qty($t['counted']));
+        }
+
+        return array(
+            'ok'                   => true,
+            'source'               => $source,
+            'card'                 => $card,
+            'card_label'           => $labels[$card] ?? strtoupper($card),
+            'is_list'              => $is_list,
+            'own_shop'             => $own,
+            'part_number'          => $part_number,
+            'material_description' => $description,
+            'shop_code'            => $code,
+            'vin_state'            => $state,
+            'vin_state_label'      => $this->cutoff_state_label($state),
+            'cutoff_vin'           => $vin,
+            'units'                => $units,
+            'suffixes'             => $out,
+            'unit_totals'          => $unit_totals,
+            'grand_total'          => $this->trim_qty($grand),
+        );
+    }
+
+    /**
+     * missing_cutoff() as a styled .xlsx — the same rows the page shows for
+     * the selected card ('' = all cards) and cutoff status ('' = both).
+     */
+    public function export_missing_cutoff($scope, $card = '', $status = '', $basis = 'bom')
+    {
+        $result = $this->missing_cutoff($scope, $basis);
+        if (!$result['ok']) {
+            show_error($result['message'], 502, 'WIP Summary unavailable');
+
+            return;
+        }
+
+        $card = isset($result['stages'][$card]) ? $card : '';
+        $status = in_array($status, array('none', 'stale'), true) ? $status : '';
+        $rows = array_values(array_filter($result['data'], function ($row) use ($card, $status) {
+            return ($card === '' || $row['card'] === $card) && ($status === '' || $row['vin_state'] === $status);
+        }));
+
+        $labels = $this->summary_labels();
+        $headers = array(
+            'No', 'Line', 'Card', 'Part Number', 'Material Description', 'UOM', 'Shop Code', 'Status Cutoff', 'Cutoff VIN', 'Shop Sendiri',
+            'Gross Shop Sendiri', 'Terhitung Shop Sendiri', 'Welding', 'Toso', 'Assy', 'Summary',
+        );
+        $value_keys = array('own_gross', 'own_counted', 'v_weld', 'v_toso', 'v_assy', 'summary');
+        $lastCol = 'P';
+        $firstValueCol = 'K';
+        $leadLastCol = 'J';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Tanpa Cutoff VIN');
+
+        $title = 'Summary Tanpa Cutoff VIN - ' . $this->summary_scope_label($scope)
+            . ($card !== '' ? ' - Card ' . ($labels[$card] ?? strtoupper($card)) : '');
+        $sheet->setCellValue('A1', strtoupper($title));
+        $sheet->mergeCells("A1:{$lastCol}1");
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+        $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+
+        $sheet->setCellValue('A2', 'Part yang Summary-nya terisi padahal shop sendiri belum punya cutoff VIN'
+            . ($status !== '' ? ' (' . $this->cutoff_state_label($status) . ')' : '')
+            . '  |  Basis: ' . $this->basis_label($basis) . '  |  Generated: ' . date('d F Y H:i'));
+        $sheet->mergeCells("A2:{$lastCol}2");
+        $sheet->getStyle('A2')->getFont()->setItalic(true)->setSize(9)->getColor()->setRGB('8B93A1');
+        $sheet->getStyle('A2')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+
+        $headerRow = 4;
+        $firstDataRow = 5;
+        $sheet->fromArray($headers, null, "A{$headerRow}");
+        $sheet->getStyle("A{$headerRow}:{$lastCol}{$headerRow}")->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle("A{$headerRow}:{$lastCol}{$headerRow}")->getFill()
+            ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('1F6FEB');
+        $sheet->getStyle("A{$headerRow}:{$lastCol}{$headerRow}")->getAlignment()
+            ->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER)->setWrapText(true);
+        $sheet->getRowDimension($headerRow)->setRowHeight(30);
+
+        $r = $firstDataRow;
+        $totals = array_fill_keys($value_keys, 0.0);
+        foreach ($rows as $i => $row) {
+            $lead_values = array(
+                $i + 1, $row['source'], $row['card_label'], $row['part_number'], $row['material_description'], $row['uom'],
+                $row['shop_code'], $this->cutoff_state_label($row['vin_state']), $row['cutoff_vin'], $row['own_label'],
+            );
+            // null (a shop the card doesn't count) stays blank; strictNullComparison keeps a numeric 0.
+            $sheet->fromArray(array_merge($lead_values, array_map(function ($k) use ($row) {
+                return $row[$k] === null ? null : (float) $row[$k];
+            }, $value_keys)), null, "A{$r}", true);
+
+            foreach ($value_keys as $k) {
+                $totals[$k] += (float) $row[$k];
+            }
+            $r++;
+        }
+
+        $sheet->setCellValue("A{$r}", 'GRAND TOTAL');
+        $sheet->mergeCells("A{$r}:{$leadLastCol}{$r}");
+        $col = $firstValueCol;
+        foreach ($value_keys as $k) {
+            $totals[$k] = (float) $this->trim_qty($totals[$k]);
+            $sheet->setCellValue("{$col}{$r}", $totals[$k]);
+            $col++;
+        }
+        $sheet->getStyle("A{$r}:{$lastCol}{$r}")->getFont()->setBold(true);
+        $sheet->getStyle("A{$r}:{$lastCol}{$r}")->getFill()
+            ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E4E9F0');
+
+        $col = $firstValueCol;
+        foreach ($value_keys as $k) {
+            $values = array_column($rows, $k);
+            $values[] = $totals[$k];
+            $sheet->getStyle("{$col}{$firstDataRow}:{$col}{$r}")->getNumberFormat()->setFormatCode($this->column_format($values));
+            $col++;
+        }
+
+        $sheet->getStyle("A{$headerRow}:C{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle("F{$firstDataRow}:F{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle("J{$firstDataRow}:{$lastCol}{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle("{$lastCol}{$firstDataRow}:{$lastCol}{$r}")->getFont()->setBold(true);
+
+        if ($r > $firstDataRow) {
+            $this->zebra_stripe($sheet, "A{$firstDataRow}:{$lastCol}" . ($r - 1));
+        }
+
+        $sheet->getStyle("A{$headerRow}:{$lastCol}{$r}")->getBorders()->getAllBorders()
+            ->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('C9CFD8');
+        $sheet->getStyle("{$lastCol}{$headerRow}:{$lastCol}{$r}")->getBorders()->getLeft()
+            ->setBorderStyle(Border::BORDER_MEDIUM)->getColor()->setRGB('4F8CFF');
+        $sheet->getStyle("A{$r}:{$lastCol}{$r}")->getBorders()->getTop()->setBorderStyle(Border::BORDER_DOUBLE);
+
+        foreach (range('A', $lastCol) as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+        $sheet->getColumnDimension('E')->setAutoSize(false)->setWidth(38);
+
+        $sheet->freezePane("A{$firstDataRow}");
+        $sheet->getPageSetup()
+            ->setOrientation(PageSetup::ORIENTATION_LANDSCAPE)
+            ->setFitToWidth(1)
+            ->setFitToHeight(0);
+        $sheet->getPageSetup()->setRowsToRepeatAtTopByStartAndEnd($headerRow, $headerRow);
+
+        $filename = 'wip_summary_tanpa_cutoff_' . ($card !== '' ? $card . '_' : '') . $scope . '_' . date('Ymd_His') . '.xlsx';
+
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: max-age=0');
+
+        $writer = new XlsxWriter($spreadsheet);
+        $writer->save('php://output');
     }
 
     /**
