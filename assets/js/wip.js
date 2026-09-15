@@ -55,8 +55,11 @@
     function setLoading(isLoading) {
         table.processing(isLoading);
         $('#wipLoading').toggleClass('d-none', !isLoading);
-        $('#btnGetWip, #btnDownload, #shopTabs .nav-link').prop('disabled', isLoading);
-        $('#btnGetWip i').toggleClass('spin', isLoading);
+        // Get Data WIP stays disabled once the STO date has passed (menu Setting).
+        var getWipLocked = window.WIP_GETWIP_LOCKED === true;
+        $('#btnDownload, #shopTabs .nav-link').prop('disabled', isLoading);
+        $('#btnGetWip').prop('disabled', isLoading || getWipLocked);
+        $('#btnGetWip i').toggleClass('spin', isLoading && !getWipLocked);
     }
 
     function showUpdated(updatedAt) {

@@ -62,6 +62,9 @@ $is_admin = ($auth_user['role'] ?? '') === 'admin';
         <a class="nav-link <?= $active_menu === 'akun' ? 'active' : '' ?>" href="<?= base_url('akun') ?>">
             <i class="bi bi-people"></i> Akun
         </a>
+        <a class="nav-link <?= $active_menu === 'setting' ? 'active' : '' ?>" href="<?= base_url('setting') ?>">
+            <i class="bi bi-gear"></i> Setting
+        </a>
         <?php endif; ?>
     </nav>
 </aside>

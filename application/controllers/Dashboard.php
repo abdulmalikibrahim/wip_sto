@@ -27,6 +27,13 @@ class Dashboard extends MY_Controller
             ->get('bom_upload_log')
             ->result_array();
 
+        // "How WIP Summary is made" guide: each Summary card and the unit
+        // shops it counts on, straight from the model so it can't drift.
+        $this->load->model('Wip_calc_model');
+        $data['summary_stages'] = $this->Wip_calc_model->summary_stages();
+        $data['summary_labels'] = $this->Wip_calc_model->summary_labels();
+        $data['page_js'] = 'assets/js/dashboard.js';
+
         $this->render('dashboard/index', $data, 'dashboard');
     }
 }

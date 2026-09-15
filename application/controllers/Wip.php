@@ -18,6 +18,7 @@ class Wip extends MY_Controller
         $data['title'] = 'Master WIP - KAP 1';
         $data['source'] = 'wip/kap1';
         $data['shops'] = $this->live_shop_labels('kap1');
+        $data['getwip_lock'] = $this->sto_status();
         $data['page_js'] = 'assets/js/wip.js';
         $this->render('wip/index', $data, 'wip_kap1');
     }
@@ -27,8 +28,17 @@ class Wip extends MY_Controller
         $data['title'] = 'Master WIP - KAP 2';
         $data['source'] = 'wip/kap2';
         $data['shops'] = $this->live_shop_labels('kap2');
+        $data['getwip_lock'] = $this->sto_status();
         $data['page_js'] = 'assets/js/wip.js';
         $this->render('wip/index', $data, 'wip_kap2');
+    }
+
+    /** STO date status (menu Setting) — past that date "Get Data WIP" is locked. */
+    protected function sto_status()
+    {
+        $this->load->model('Setting_model');
+
+        return $this->Setting_model->sto_status();
     }
 
     /**
@@ -321,6 +331,15 @@ class Wip extends MY_Controller
 
     protected function fetch_and_cache($source, $shop, $live_model_name)
     {
+        // Past the STO date the cached WIP is the STO snapshot — refuse to overwrite it,
+        // even if the page was opened (button still enabled) before midnight.
+        $this->load->model('Setting_model');
+        if ($this->Setting_model->getwip_locked()) {
+            $this->respond(array('ok' => false, 'message' => $this->Setting_model->lock_message(), 'data' => array()));
+
+            return;
+        }
+
         $this->load->model($live_model_name);
         $this->load->model('Wip_data_model');
 

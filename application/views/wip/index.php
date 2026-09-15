@@ -37,9 +37,23 @@
         <button class="btn btn-sm btn-success" id="btnDownload" type="button">
             <i class="bi bi-file-earmark-excel"></i> Download Excel
         </button>
+        <?php $lock = $getwip_lock ?? array('date' => null, 'locked' => false); ?>
+        <?php if ($lock['date'] !== null): ?>
+        <span class="badge <?= $lock['locked'] ? 'text-bg-danger' : 'text-bg-secondary' ?>" title="Tanggal activity STO (menu Setting)">
+            <i class="bi bi-calendar-event me-1"></i>STO <?= html_escape($lock['date_label']) ?>
+        </span>
+        <?php endif; ?>
+        <?php if ($lock['locked']): ?>
+        <span class="d-inline-block" tabindex="0" title="Dikunci: tanggal STO <?= html_escape($lock['date_label']) ?> sudah lewat">
+            <button class="btn btn-sm btn-secondary" id="btnGetWip" type="button" disabled>
+                <i class="bi bi-lock-fill"></i> Get Data WIP
+            </button>
+        </span>
+        <?php else: ?>
         <button class="btn btn-sm btn-secondary" id="btnGetWip" type="button">
             <i class="bi bi-cloud-arrow-down"></i> Get Data WIP
         </button>
+        <?php endif; ?>
     </li>
 </ul>
 
@@ -122,4 +136,5 @@
 
 <script>
     var WIP_SOURCE = <?= json_encode($source) ?>;
+    var WIP_GETWIP_LOCKED = <?= json_encode(!empty($lock['locked'])) ?>; // STO date passed (menu Setting)
 </script>

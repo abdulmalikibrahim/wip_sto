@@ -152,4 +152,8 @@ $route['akun/data'] = 'akun/data';
 $route['akun/create'] = 'akun/create';
 $route['akun/update/(:num)'] = 'akun/update/$1';
 $route['akun/delete/(:num)'] = 'akun/delete/$1';
+
+// Setting (STO activity date — locks "Get Data WIP" once it has passed)
+$route['setting'] = 'setting/index';
+$route['setting/save'] = 'setting/save';
 $route['translate_uri_dashes'] = FALSE;

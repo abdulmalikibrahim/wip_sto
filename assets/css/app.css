@@ -141,6 +141,10 @@ a { color: var(--app-accent); }
 
 .stat-card .stat-value { font-size: 1.5rem; font-weight: 700; line-height: 1; }
 .stat-card .stat-label { color: var(--app-text-muted); font-size: 0.82rem; }
+.stat-card .stat-icon.is-ok { background: rgba(63, 185, 80, 0.15); color: #3fb950; }
+.stat-card .stat-icon.is-warn { background: rgba(240, 180, 41, 0.15); color: #f0b429; }
+.stat-card .stat-icon.is-danger { background: rgba(220, 53, 69, 0.15); color: #ff6b7a; }
+.stat-card .stat-icon.is-muted { background: var(--app-surface-2); color: var(--app-text-muted); }
 
 /* Stat cards that double as click-to-filter buttons (e.g. WIP Calc's
    Welding/Toso/Assy cards) — same active/hover language as .model-card. */
@@ -305,6 +309,327 @@ a { color: var(--app-accent); }
    the WIP Calc table) — marks where one group's Net/Gross/Cutoff ends and
    the next one's begins. */
 .col-group-start { border-left: 2px solid var(--app-accent) !important; }
+
+/* ---------- Dashboard: "Alur Data -> WIP Summary" guide ----------
+   Step walkthrough (auto-plays, see assets/js/dashboard.js), the Cutoff
+   VIN conveyor demo, the Summary card map and the rule tiles. */
+.flow-anim { --flow-ok: #3fb950; --flow-warn: #f0b429; --flow-muted: #3a404b; }
+
+.flow-track-wrap { position: relative; }
+.flow-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.5rem;
+    position: relative;
+    z-index: 1;
+}
+.flow-step {
+    width: 100%;
+    background: none;
+    border: 0;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0 0.25rem;
+    text-align: center;
+    cursor: pointer;
+}
+.flow-step:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 4px; border-radius: 0.5rem; }
+.flow-text { display: flex; flex-direction: column; line-height: 1.25; }
+.flow-node {
+    position: relative;
+    flex-shrink: 0;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 1.35rem;
+    background: var(--app-surface-2);
+    border: 2px solid var(--app-border);
+    color: var(--app-text-muted);
+    transition: background-color .35s ease, border-color .35s ease, color .35s ease, transform .35s ease, box-shadow .35s ease;
+}
+.flow-num {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    font-size: 0.7rem;
+    font-weight: 700;
+    display: grid;
+    place-items: center;
+    background: var(--app-border);
+    color: #e4e6eb;
+    transition: background-color .35s ease, color .35s ease;
+}
+.flow-title { font-weight: 600; font-size: 0.9rem; color: #c3c8d1; }
+.flow-tag { font-size: 0.75rem; color: var(--app-text-muted); }
+.flow-step:hover .flow-node { border-color: var(--app-accent); }
+.flow-step.is-done .flow-node { border-color: var(--flow-ok); color: var(--flow-ok); }
+.flow-step.is-done .flow-num { background: var(--flow-ok); color: #0e1116; }
+.flow-step.is-active .flow-node {
+    background: var(--app-accent);
+    border-color: var(--app-accent);
+    color: #fff;
+    transform: scale(1.08);
+    box-shadow: 0 0 0 6px rgba(79, 140, 255, 0.18);
+}
+.flow-step.is-active .flow-node::after {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    border: 2px solid var(--app-accent);
+    animation: flowPulse 1.6s ease-out infinite;
+}
+.flow-step.is-active .flow-num { background: #fff; color: var(--app-accent); }
+.flow-step.is-active .flow-title { color: #fff; }
+
+/* The line joining the step nodes: grey base, green->blue fill up to the
+   active step (--p, 0..1) and small "data packets" running along it. */
+.flow-track {
+    position: absolute;
+    top: 25px;
+    left: 10%;
+    right: 10%;
+    height: 3px;
+    border-radius: 3px;
+    background: var(--flow-muted);
+}
+.flow-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: calc(var(--p, 0) * 100%);
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--flow-ok), var(--app-accent));
+    transition: width .6s ease, height .6s ease;
+}
+.flow-packet {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 8px;
+    height: 8px;
+    margin: -4px 0 0 -4px;
+    border-radius: 50%;
+    background: #a9c8ff;
+    box-shadow: 0 0 8px 2px rgba(79, 140, 255, 0.9);
+    opacity: 0;
+    animation: flowPacket 3.6s linear infinite;
+}
+.flow-packet:nth-child(3) { animation-delay: 1.2s; }
+.flow-packet:nth-child(4) { animation-delay: 2.4s; }
+
+.flow-panels { margin-top: 1.4rem; }
+.flow-panel {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 1rem 1.25rem;
+    align-items: start;
+    background: var(--app-surface-2);
+    border: 1px solid var(--app-border);
+    border-left: 3px solid var(--app-accent);
+    border-radius: 0.6rem;
+    padding: 1rem 1.25rem;
+    animation: flowIn .45s ease;
+}
+.flow-panel-icon {
+    width: 46px;
+    height: 46px;
+    border-radius: 0.6rem;
+    display: grid;
+    place-items: center;
+    font-size: 1.3rem;
+    background: rgba(79, 140, 255, 0.15);
+    color: var(--app-accent);
+}
+.flow-panel-kicker { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--app-text-muted); }
+.flow-panel-title { font-size: 1.1rem; font-weight: 600; margin: 0.1rem 0 0.2rem; }
+.flow-panel-lead { color: #c3c8d1; margin-bottom: 0.55rem; }
+.flow-rules { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.35rem; font-size: 0.88rem; }
+.flow-rules li { position: relative; padding-left: 1.2rem; animation: flowIn .45s ease both; animation-delay: calc(var(--i, 0) * .12s + .1s); }
+.flow-rules li::before {
+    content: "";
+    position: absolute;
+    left: 0.2rem;
+    top: 0.55em;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--flow-ok);
+}
+.flow-panel-links { display: flex; flex-direction: column; gap: 0.4rem; min-width: 150px; }
+
+.flow-timer { height: 3px; margin-top: 0.9rem; border-radius: 3px; background: var(--flow-muted); overflow: hidden; }
+.flow-timer-bar { height: 100%; width: 0; background: var(--app-accent); }
+.flow-guide.is-playing .flow-timer-bar.run { animation: flowTimer var(--flow-dur, 5s) linear forwards; }
+.flow-guide:not(.is-playing) .flow-timer { visibility: hidden; }
+
+/* Cutoff VIN demo: a conveyor, units enter on the left (newest) and leave
+   on the right (oldest). Green = counted, flag = cutoff VIN, grey = older. */
+.conveyor { display: flex; align-items: center; gap: 0.5rem; }
+.conveyor-end { flex-shrink: 0; font-size: 0.72rem; color: var(--app-text-muted); text-align: center; line-height: 1.2; }
+.conveyor-end i { display: block; font-size: 1rem; }
+.conveyor-belt {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+    overflow: hidden;
+    padding: 1.5rem 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    background: var(--app-surface-2);
+    border: 1px solid var(--app-border);
+}
+.conveyor-belt::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 6px;
+    background: repeating-linear-gradient(90deg, #3a404b 0 10px, #2b3038 10px 20px);
+    animation: beltMove .8s linear infinite;
+}
+.conveyor-units { display: flex; gap: 0.4rem; min-height: 56px; align-items: flex-end; }
+.c-unit { flex: 0 0 auto; width: 46px; position: relative; display: flex; flex-direction: column; align-items: center; gap: 0.15rem; }
+.c-unit .c-body { width: 46px; height: 34px; border-radius: 0.45rem; display: grid; place-items: center; font-size: 1.15rem; }
+.c-unit .c-vin { font-size: 0.62rem; font-family: 'Consolas', 'SFMono-Regular', monospace; color: var(--app-text-muted); }
+.c-unit.old .c-body { background: #2b3038; color: #6b7380; border: 1px dashed #4a515d; }
+.c-unit.new .c-body,
+.c-unit.cut .c-body { background: rgba(63, 185, 80, 0.16); color: #3fb950; border: 1px solid rgba(63, 185, 80, 0.55); }
+.c-unit.cut .c-body { border-color: var(--flow-warn); box-shadow: 0 0 0 2px rgba(240, 180, 41, 0.3); }
+.c-unit.cut::before {
+    content: "CUTOFF";
+    position: absolute;
+    top: -1.2rem;
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: #0e1116;
+    background: var(--flow-warn);
+    padding: 0 0.3rem;
+    border-radius: 0.2rem;
+}
+.c-unit.enter { animation: unitIn .5s ease-out; }
+.c-unit.leave { animation: unitOut .5s ease-in forwards; }
+.conveyor-legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin-top: 0.6rem; color: var(--app-text-muted); }
+.conveyor-legend .lg { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 0.3rem; vertical-align: -1px; }
+.lg-new { background: #3fb950; }
+.lg-cut { background: var(--flow-warn); }
+.lg-old { background: #4a515d; }
+
+.formula-box {
+    margin-top: 0.9rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    background: rgba(79, 140, 255, 0.08);
+    border: 1px solid rgba(79, 140, 255, 0.25);
+}
+.formula-line { font-size: 1.02rem; font-family: 'Consolas', 'SFMono-Regular', monospace; }
+.formula-line .num { display: inline-block; font-weight: 700; }
+.bump { animation: bump .4s ease; }
+
+/* Summary card map: which unit shops each WIP Summary card counts on. */
+.smap-row {
+    display: grid;
+    grid-template-columns: 70px 1fr;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.45rem 0;
+    border-bottom: 1px dashed var(--app-border);
+}
+.smap-row:last-child { border-bottom: 0; }
+.smap-card { font-weight: 700; font-size: 0.85rem; }
+.smap-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
+.smap-arrow { color: var(--app-text-muted); font-size: 0.7rem; }
+.smap-chip {
+    font-size: 0.75rem;
+    padding: 0.18rem 0.55rem;
+    border-radius: 999px;
+    background: var(--app-surface-2);
+    border: 1px solid var(--app-border);
+    color: #c3c8d1;
+    white-space: nowrap;
+    animation: chipFlow 3.2s ease-in-out infinite;
+    animation-delay: calc(var(--i, 0) * .4s);
+}
+.smap-chip.is-own { background: rgba(63, 185, 80, 0.15); border-color: rgba(63, 185, 80, 0.55); color: #3fb950; font-weight: 600; }
+.smap-legend .smap-chip { animation: none; }
+
+.rule-tile {
+    height: 100%;
+    display: flex;
+    gap: 0.7rem;
+    align-items: flex-start;
+    padding: 0.75rem 0.85rem;
+    border-radius: 0.55rem;
+    background: var(--app-surface-2);
+    border: 1px solid var(--app-border);
+    transition: transform .2s ease, border-color .2s ease;
+}
+.rule-tile:hover { transform: translateY(-2px); border-color: var(--app-accent); }
+.rule-ico {
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    border-radius: 0.5rem;
+    display: grid;
+    place-items: center;
+    font-size: 1rem;
+    background: rgba(79, 140, 255, 0.15);
+    color: var(--app-accent);
+}
+.rule-ico.warn { background: rgba(240, 180, 41, 0.15); color: #f0b429; }
+.rule-ico.danger { background: rgba(220, 53, 69, 0.15); color: #ff6b7a; }
+.rule-ico.ok { background: rgba(63, 185, 80, 0.15); color: #3fb950; }
+.rule-title { font-weight: 600; font-size: 0.88rem; }
+.rule-text { font-size: 0.8rem; color: var(--app-text-muted); line-height: 1.35; }
+
+/* Tiles fade up as they scroll into view — only once JS has flagged the
+   page (.reveal-ready), so without JS they simply show. */
+.reveal { transition: opacity .5s ease, transform .5s ease; transition-delay: var(--d, 0s); }
+.reveal-ready .reveal:not(.in) { opacity: 0; transform: translateY(12px); }
+
+@keyframes flowPulse { from { transform: scale(1); opacity: .8; } to { transform: scale(1.55); opacity: 0; } }
+@keyframes flowIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes flowTimer { from { width: 0; } to { width: 100%; } }
+@keyframes flowPacket { 0% { left: 0; opacity: 0; } 10%, 90% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
+@keyframes flowPacketY { 0% { top: 0; opacity: 0; } 10%, 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+@keyframes beltMove { to { background-position: 20px 0; } }
+@keyframes unitIn { from { opacity: 0; transform: translateX(-20px) scale(.7); margin-left: calc(-46px - 0.4rem); } to { opacity: 1; transform: none; margin-left: 0; } }
+@keyframes unitOut { to { opacity: 0; transform: translateX(20px) scale(.7); margin-right: calc(-46px - 0.4rem); } }
+@keyframes bump { 50% { transform: scale(1.3); } }
+@keyframes chipFlow {
+    0%, 30%, 100% { box-shadow: 0 0 0 0 rgba(79, 140, 255, 0); }
+    12% { box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.45); border-color: var(--app-accent); }
+}
+
+/* Phones: the steps stack into a vertical timeline. */
+@media (max-width: 767.98px) {
+    .flow-steps { grid-template-columns: 1fr; gap: 0; }
+    .flow-steps > li { height: 64px; }
+    .flow-step { flex-direction: row; height: 100%; text-align: left; gap: 0.85rem; padding: 0; }
+    .flow-track { top: 32px; bottom: 32px; left: 25px; right: auto; width: 3px; height: auto; }
+    .flow-fill { width: 100%; height: calc(var(--p, 0) * 100%); background: linear-gradient(180deg, var(--flow-ok), var(--app-accent)); }
+    .flow-packet { top: 0; left: 50%; animation-name: flowPacketY; }
+    .flow-panel { grid-template-columns: auto 1fr; padding: 0.9rem 1rem; }
+    .flow-panel-links { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; min-width: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .flow-anim *, .flow-anim *::before, .flow-anim *::after { animation: none !important; transition: none !important; }
+    .flow-packet { display: none; }
+}
 
 @media (max-width: 991.98px) {
     .app-sidebar {
