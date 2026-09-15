@@ -29,7 +29,18 @@
             }
         },
         { data: 'material_description' },
-        { data: 'shop_code' }
+        { data: 'shop_code' },
+        {
+            // How many Models use this part, then which ones — searchable by model name, sorted by count.
+            data: 'model_count',
+            render: function (value, type, row) {
+                if (type === 'sort' || type === 'type') return value;
+                if (type === 'filter') return row.models;
+                if (!value) return '<span class="text-secondary">&mdash;</span>';
+                return '<span class="badge text-bg-primary me-1" title="' + value + ' model">' + value + '</span>' +
+                    '<span class="small">' + esc(row.models) + '</span>';
+            }
+        }
     ];
 
     // Gross/Cutoff/Net are always shown together as one fixed group per

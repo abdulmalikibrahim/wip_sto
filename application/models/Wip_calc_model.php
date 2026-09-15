@@ -182,6 +182,7 @@ class Wip_calc_model extends CI_Model
                     'material_description' => $row['material_description'],
                     'uom'                  => $row['uom'],
                     'shop_code_set'        => array(), // collapsed into 'shop_code' below, once all rows are seen
+                    'model_set'            => array(), // Models the part is used in -> 'models' / 'model_count' below
                     'juklak_main'          => null,
                 );
                 foreach (array_keys($shop_codes) as $s) {
@@ -195,6 +196,11 @@ class Wip_calc_model extends CI_Model
             // model/suffix/shop_code combos); collect every distinct raw
             // Shop Code value seen for it, verbatim from the BOM data.
             $acc[$part_number]['shop_code_set'][$row['shop_code']] = true;
+
+            $model = strtoupper(trim((string) $row['model']));
+            if ($model !== '') {
+                $acc[$part_number]['model_set'][$model] = true;
+            }
 
             $part_key = strtoupper(trim($part_number));
 
@@ -273,6 +279,12 @@ class Wip_calc_model extends CI_Model
         foreach ($data as &$row) {
             $row['shop_code'] = implode(', ', array_keys($row['shop_code_set']));
             unset($row['shop_code_set']);
+
+            $models = array_map('strval', array_keys($row['model_set']));
+            natcasesort($models);
+            $row['models'] = implode(', ', $models);
+            $row['model_count'] = count($models);
+            unset($row['model_set']);
 
             $total = 0.0;
             $total_gross = 0.0;
@@ -902,8 +914,8 @@ class Wip_calc_model extends CI_Model
             return $k . '_vin';
         }, $shop_keys);
 
-        $lastCol = chr(ord('A') + 4 + count($value_keys) + count($vin_keys) - 1);
-        $firstShopCol = chr(ord('A') + 4); // after No, Part Number, Material Description, Shop Code
+        $lastCol = chr(ord('A') + 5 + count($value_keys) + count($vin_keys) - 1);
+        $firstShopCol = chr(ord('A') + 5); // after No, Part Number, Material Description, Shop Code, Model
         $lastNumericCol = chr(ord($firstShopCol) + count($value_keys) - 1); // last column before the VIN block
 
         $spreadsheet = new Spreadsheet();
@@ -928,7 +940,7 @@ class Wip_calc_model extends CI_Model
         $subHeaderRow = 5;
         $firstDataRow = 6;
 
-        foreach (array('A' => 'No', 'B' => 'Part Number', 'C' => 'Material Description', 'D' => 'Shop Code') as $col => $label) {
+        foreach (array('A' => 'No', 'B' => 'Part Number', 'C' => 'Material Description', 'D' => 'Shop Code', 'E' => 'Model') as $col => $label) {
             $sheet->setCellValue("{$col}{$headerRow}", $label);
             $sheet->mergeCells("{$col}{$headerRow}:{$col}{$subHeaderRow}");
         }
@@ -964,7 +976,7 @@ class Wip_calc_model extends CI_Model
 
         foreach ($result['data'] as $i => $row) {
             $rowData = array_merge(
-                array($i + 1, $row['part_number'], $row['material_description'], $row['shop_code']),
+                array($i + 1, $row['part_number'], $row['material_description'], $row['shop_code'], $row['models']),
                 array_map(function ($k) use ($row) {
                     return (float) $row[$k];
                 }, $value_keys),
@@ -992,7 +1004,7 @@ class Wip_calc_model extends CI_Model
         }
 
         $sheet->setCellValue("A{$r}", 'GRAND TOTAL');
-        $sheet->mergeCells("A{$r}:D{$r}");
+        $sheet->mergeCells("A{$r}:E{$r}");
         $col = $firstShopCol;
         foreach ($value_keys as $k) {
             $sheet->setCellValue("{$col}{$r}", $totals[$k]);

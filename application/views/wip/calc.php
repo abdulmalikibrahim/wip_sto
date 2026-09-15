@@ -98,6 +98,7 @@
                         <th rowspan="2">Part Number</th>
                         <th rowspan="2">Material Description</th>
                         <th rowspan="2">Shop Code</th>
+                        <th rowspan="2" title="Jumlah model yang memakai part ini, lalu nama modelnya">Model</th>
                         <?php foreach ($shops as $key => $label): ?>
                         <th colspan="3" class="text-center col-group-start"><?= html_escape($label) ?></th>
                         <?php endforeach; ?>
