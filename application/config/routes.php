@@ -76,6 +76,33 @@ $route['part-list/upload'] = 'part_list/upload';
 $route['part-list/delete/(:num)'] = 'part_list/delete/$1';
 $route['part-list/delete-bulk'] = 'part_list/delete_bulk';
 
+// Juklak (Part No -> Main Part No; non-main parts count as 0 in WIP Calc/Summary)
+$route['juklak'] = 'juklak/index';
+$route['juklak/data'] = 'juklak/data';
+$route['juklak/template'] = 'juklak/template';
+$route['juklak/export'] = 'juklak/export';
+$route['juklak/upload'] = 'juklak/upload';
+$route['juklak/delete/(:num)'] = 'juklak/delete/$1';
+
+// WIP WOS IPI / FTI (upload-only WIP stage before Welding; one list each per KAP line)
+$route['wip/wos-(ipi|fti)'] = 'wip/wos/$1';
+$route['wip/wos-(ipi|fti)/data/(:any)'] = 'wip/wos_data/$1/$2';
+$route['wip/wos-(ipi|fti)/export/(:any)'] = 'wip/wos_export/$1/$2';
+$route['wip/wos-(ipi|fti)/clear/(:any)'] = 'wip/wos_clear/$1/$2';
+$route['wip/wos-(ipi|fti)/template'] = 'wip/wos_template/$1';
+$route['wip/wos-(ipi|fti)/upload'] = 'wip/wos_upload/$1';
+
+// WIP Calc. IPI / FTI (uploaded welding parts counted against WOS IPI / WOS FTI, own cutoff VIN; standalone)
+$route['wip/calc-(ipi|fti)'] = 'ippi_fti/index/$1';
+$route['wip/calc-(ipi|fti)/data'] = 'ippi_fti/data/$1';
+$route['wip/calc-(ipi|fti)/breakdown'] = 'ippi_fti/breakdown/$1';
+$route['wip/calc-(ipi|fti)/export'] = 'ippi_fti/export/$1';
+$route['wip/calc-(ipi|fti)/template'] = 'ippi_fti/template/$1';
+$route['wip/calc-(ipi|fti)/list'] = 'ippi_fti/export_list/$1';
+$route['wip/calc-(ipi|fti)/upload'] = 'ippi_fti/upload/$1';
+$route['wip/calc-(ipi|fti)/cutoff'] = 'ippi_fti/cutoff/$1';
+$route['wip/calc-(ipi|fti)/delete/(:num)'] = 'ippi_fti/delete/$1/$2';
+
 // Master WIP
 $route['wip/kap1'] = 'wip/kap1';
 $route['wip/kap1/data/(:any)'] = 'wip/kap1_data/$1';
@@ -89,7 +116,6 @@ $route['wip/kap1/calc/data'] = 'wip/kap1_calc_data';
 $route['wip/kap1/calc/template'] = 'wip/kap1_calc_template';
 $route['wip/kap1/calc/export'] = 'wip/kap1_calc_export';
 $route['wip/kap1/calc/detail'] = 'wip/kap1_calc_detail';
-$route['wip/kap1/calc/detail/data'] = 'wip/kap1_calc_detail_data';
 $route['wip/kap1/calc/detail/export'] = 'wip/kap1_calc_detail_export';
 $route['wip/kap1/calc/detail/breakdown'] = 'wip/kap1_calc_detail_breakdown';
 $route['wip/kap1/calc/detail/breakdown/vins'] = 'wip/kap1_calc_detail_breakdown_vins';
@@ -109,7 +135,6 @@ $route['wip/kap2/calc/data'] = 'wip/kap2_calc_data';
 $route['wip/kap2/calc/template'] = 'wip/kap2_calc_template';
 $route['wip/kap2/calc/export'] = 'wip/kap2_calc_export';
 $route['wip/kap2/calc/detail'] = 'wip/kap2_calc_detail';
-$route['wip/kap2/calc/detail/data'] = 'wip/kap2_calc_detail_data';
 $route['wip/kap2/calc/detail/export'] = 'wip/kap2_calc_detail_export';
 $route['wip/kap2/calc/detail/breakdown'] = 'wip/kap2_calc_detail_breakdown';
 $route['wip/kap2/calc/detail/breakdown/vins'] = 'wip/kap2_calc_detail_breakdown_vins';
@@ -117,9 +142,9 @@ $route['wip/kap2/calc/upload'] = 'wip/kap2_calc_upload';
 $route['wip/kap2/calc/cutoff'] = 'wip/kap2_calc_cutoff_set';
 $route['wip/kap2/calc/cutoff/clear'] = 'wip/kap2_calc_cutoff_clear';
 $route['wip/kap2/calc/cutoff/shop'] = 'wip/kap2_calc_cutoff_set_shop';
-$route['wip/calc-combined'] = 'wip/calc_combined';
-$route['wip/calc-combined/data'] = 'wip/calc_combined_data';
-$route['wip/calc-combined/export'] = 'wip/calc_combined_export';
+$route['wip/summary'] = 'wip/summary';
+$route['wip/summary/data'] = 'wip/summary_data';
+$route['wip/summary/export'] = 'wip/summary_export';
 
 // Akun (CRUD)
 $route['akun'] = 'akun/index';

@@ -13,9 +13,21 @@
             : esc(value);
     }
 
+    // Juklak marks a part as represented by another (main) part on this line — counted as 0.
+    function juklakBadge(row) {
+        if (!row.juklak_main) return '';
+        return ' <span class="badge text-bg-warning text-dark" title="Juklak: sudah diwakili main part ' + esc(row.juklak_main) +
+            ' — dihitung 0">Juklak &rarr; ' + esc(row.juklak_main) + '</span>';
+    }
+
     var columns = [
         { data: 'no', orderable: false, searchable: false },
-        { data: 'part_number' },
+        {
+            data: 'part_number',
+            render: function (value, type, row) {
+                return type === 'display' ? esc(value) + juklakBadge(row) : value;
+            }
+        },
         { data: 'material_description' },
         { data: 'shop_code' }
     ];
@@ -24,6 +36,16 @@
     // shop (Gross | Cutoff | Net) — no show/hide toggle, so there's no
     // dynamic column-visibility juggling for DataTables' header colspans to
     // get wrong (that's what broke when these were togglable).
+    // Whether a row's BOM Shop Code names this shop's code for the current
+    // KAP line — only then is there a formula to show for it.
+    function usesShop(row, shop) {
+        var code = (WIP_CALC_SHOP_CODES[shop] || '').toUpperCase();
+        if (!code) return false;
+        return (row.shop_code || '').toUpperCase().split(',').some(function (c) {
+            return c.trim() === code;
+        });
+    }
+
     function pushGroup(key, netClassName) {
         columns.push({
             data: key + '_gross',
@@ -45,7 +67,13 @@
             render: function (value, type, row) {
                 if (type !== 'display') return value;
                 var vin = row[key + '_vin'];
-                var title = vin ? ('Cutoff VIN: ' + vin) : 'No cutoff set — showing total';
+                var title = vin ? ('Cutoff VIN: ' + vin) : 'No cutoff VIN set — Net 0';
+                // A shop's Net opens that part's Formula Detail (the Total column has none).
+                if (usesShop(row, key)) {
+                    return '<a href="#" class="btn-formula text-decoration-none" data-shop="' + esc(key) + '" ' +
+                        'data-part-number="' + esc(row.part_number) + '" title="' + esc(title + ' — click to see the formula') + '">' +
+                        formatQty(value) + ' <i class="bi bi-calculator small"></i></a>';
+                }
                 return '<span title="' + esc(title) + '">' + formatQty(value) + '</span>';
             }
         });
@@ -256,11 +284,28 @@
         });
     }
 
-    function renderSummary(summary) {
+    // Sum of each shop's Net column over every part (Juklak parts are already 0).
+    function shopNetTotals(rows) {
+        var totals = {};
+        Object.keys(WIP_CALC_SHOPS).forEach(function (shop) {
+            totals[shop] = (rows || []).reduce(function (sum, r) {
+                return sum + (parseFloat(r[shop]) || 0);
+            }, 0);
+        });
+        return totals;
+    }
+
+    function renderSummary(summary, rows) {
+        var netTotals = rows ? shopNetTotals(rows) : null;
+
         $('#cutoffStatus [data-cutoff-shop]').each(function () {
             var shop = $(this).data('cutoff-shop');
             var info = summary ? summary[shop] : null;
             var $val = $(this).find('[data-cutoff-summary]');
+
+            $(this).find('[data-net-total]').text(
+                netTotals ? netTotals[shop].toLocaleString('id-ID', { maximumFractionDigits: 2 }) : '—'
+            );
 
             if (!info) {
                 $val.text('—');
@@ -286,7 +331,7 @@
                     return;
                 }
                 table.clear().rows.add(resp.data).draw();
-                renderSummary(resp.cutoff_summary);
+                renderSummary(resp.cutoff_summary, resp.data);
                 renderPartNumberList(resp.data);
             })
             .fail(function () {
@@ -404,6 +449,188 @@
         });
     });
 
+    // ------------------------------------------------------------
+    // Formula Detail — clicking a shop's Net value shows how that part's
+    // number was worked out: every suffix it's defined for, matching WIP
+    // units × Qty, and where its cutoff VIN sits in the shop's list. (This
+    // used to be a separate "Calc Detail" page.)
+    // ------------------------------------------------------------
+    function dashIfZero(v) {
+        return parseFloat(v) === 0 ? '<span class="text-secondary">—</span>' : esc(v);
+    }
+
+    function fieldRow(label, value) {
+        return '<dt class="col-5">' + esc(label) + '</dt><dd class="col-7">' + value + '</dd>';
+    }
+
+    function loadingHtml() {
+        return '<div class="text-center text-secondary py-4"><span class="spinner-border spinner-border-sm me-2"></span>Loading…</div>';
+    }
+
+    var $modalFormulaBody = $('#modalFormulaBody');
+    var $modalVinListBody = $('#modalVinListBody');
+
+    function renderBreakdown(resp) {
+        var vinDisplay;
+        if (!resp.cutoff) {
+            vinDisplay = '<span class="text-secondary">Belum ada cutoff VIN — Net 0</span>';
+        } else if (resp.cutoff.status === 'stale') {
+            vinDisplay = '<span class="text-warning">' + esc(resp.cutoff.vin) + ' (stale — not found, totaled instead)</span>';
+        } else {
+            vinDisplay = esc(resp.cutoff.vin) +
+                ' <span class="text-secondary">(unit ' + esc(resp.cutoff.position) + ' of ' + esc(resp.cutoff.total) +
+                ' in ' + esc(resp.shop_label) + ')</span>';
+        }
+
+        var rows = resp.suffixes.map(function (s) {
+            var zero = parseFloat(s.subtotal) === 0;
+            // "See VINs" only when there's something to list.
+            var vinBtn = zero ? '' :
+                '<button type="button" class="btn btn-link btn-sm p-0 ms-2 btn-see-vins" ' +
+                'data-part-number="' + esc(resp.part_number) + '" data-shop-code="' + esc(resp.shop_code) + '" ' +
+                'data-model="' + esc(s.model) + '" data-suffix="' + esc(s.suffix) + '">See VINs</button>';
+            return '<tr' + (zero ? ' class="text-secondary"' : '') + '>' +
+                '<td>' + esc(s.model) + '</td>' +
+                '<td>' + esc(s.suffix) + '</td>' +
+                '<td class="text-end">' + esc(s.qty) + '</td>' +
+                '<td class="text-end">' + dashIfZero(s.unit_count) + vinBtn + '</td>' +
+                '<td class="text-end' + (zero ? '' : ' fw-semibold text-body') + '">' + dashIfZero(s.subtotal) + '</td>' +
+                '</tr>';
+        }).join('');
+
+        $modalFormulaBody.html(
+            '<dl class="row mb-3 small">' +
+                fieldRow('Part Number', esc(resp.part_number)) +
+                fieldRow('Material Description', esc(resp.material_description)) +
+                fieldRow('Shop', esc(resp.shop_label)) +
+                fieldRow('Cutoff VIN', vinDisplay) +
+            '</dl>' +
+            (resp.juklak_main
+                ? '<div class="alert alert-warning py-2 px-3 small mb-3"><i class="bi bi-journal-check me-1"></i>' +
+                    'Juklak: part ini sudah diwakili main part <strong>' + esc(resp.juklak_main) + '</strong>, jadi dihitung <strong>0</strong>. ' +
+                    'Jumlah unit di bawah hanya sebagai referensi.</div>'
+                : '') +
+            '<div class="text-secondary small mb-2">Every suffix this part is defined for, and how many of the shop\'s cached WIP units (from the cutoff VIN on) matched each one:</div>' +
+            '<div class="table-responsive">' +
+                '<table class="table table-sm table-hover mb-0">' +
+                    '<thead><tr><th>Model</th><th>Suffix</th><th class="text-end">Qty</th><th class="text-end">Matching Units</th><th class="text-end">Subtotal</th></tr></thead>' +
+                    '<tbody>' + rows + '</tbody>' +
+                    '<tfoot><tr class="fw-semibold border-top">' +
+                        '<td colspan="4" class="text-end">Total (Net)</td>' +
+                        '<td class="text-end text-success">' + esc(resp.grand_subtotal) + '</td>' +
+                    '</tr></tfoot>' +
+                '</table>' +
+            '</div>'
+        );
+    }
+
+    // The cached units behind one suffix's Matching Units count, so a number
+    // that looks off against a hand-counted list can be checked VIN by VIN.
+    // Duplicate VINs (the same unit cached twice) are highlighted.
+    function renderVinList(resp) {
+        if (!resp.vins.length) {
+            $modalVinListBody.html('<div class="text-secondary">No matching units found.</div>');
+            return;
+        }
+
+        var dupCount = resp.vins.filter(function (v) { return v.duplicate; }).length;
+        var warning = dupCount > 0 ?
+            '<div class="alert alert-warning py-2 px-3 small mb-3">' +
+                '<i class="bi bi-exclamation-triangle me-1"></i>' +
+                dupCount + ' row(s) below share a VIN with another row — the same physical unit is cached more than once, ' +
+                'which inflates this count above a hand-counted list.' +
+            '</div>' : '';
+
+        var rows = resp.vins.map(function (v) {
+            return '<tr' + (v.duplicate ? ' class="table-warning"' : '') + '>' +
+                '<td class="text-end">' + esc(v.seq) + '</td>' +
+                '<td>' + esc(v.vin) + (v.duplicate ? ' <i class="bi bi-exclamation-triangle-fill text-warning" title="Duplicate VIN"></i>' : '') + '</td>' +
+                '<td>' + esc(v.katashiki) + '</td>' +
+                '<td>' + esc(v.modelcode) + '</td>' +
+                '<td>' + esc(v.sfx) + '</td>' +
+                '</tr>';
+        }).join('');
+
+        $modalVinListBody.html(
+            '<dl class="row mb-3 small">' +
+                fieldRow('Part Number', esc(resp.part_number)) +
+                fieldRow('Model / Suffix', esc(resp.model) + ' / ' + esc(resp.suffix)) +
+                fieldRow('Shop', esc(resp.shop_label)) +
+                fieldRow('Matching Units', esc(resp.unit_count)) +
+            '</dl>' +
+            warning +
+            '<div class="table-responsive">' +
+                '<table class="table table-sm table-hover mb-0">' +
+                    '<thead><tr><th class="text-end">Seq</th><th>VIN</th><th>Katashiki</th><th>Model</th><th>Suffix</th></tr></thead>' +
+                    '<tbody>' + rows + '</tbody>' +
+                '</table>' +
+            '</div>'
+        );
+    }
+
+    // Delegated from the document, not the table: with the responsive
+    // extension a collapsed Net value is rendered in a child row instead.
+    $(document).on('click', '#tblWipCalc .btn-formula', function (e) {
+        e.preventDefault();
+        var $link = $(this);
+
+        $modalFormulaBody.html(loadingHtml());
+        bootstrap.Modal.getOrCreateInstance('#modalFormula').show();
+
+        $.getJSON(CalcBasis.url(BASE_URL + WIP_CALC_SOURCE + '/calc/detail/breakdown'), {
+            part_number: $link.data('part-number'),
+            shop_code: WIP_CALC_SHOP_CODES[$link.data('shop')]
+        })
+            .done(function (resp) {
+                if (!resp.ok) {
+                    $modalFormulaBody.html('<div class="alert alert-danger mb-0">' + esc(resp.message || 'Failed to load this part\'s breakdown.') + '</div>');
+                    return;
+                }
+                renderBreakdown(resp);
+            })
+            .fail(function () {
+                $modalFormulaBody.html('<div class="alert alert-danger mb-0">Failed to reach the server.</div>');
+            });
+    });
+
+    $modalFormulaBody.on('click', '.btn-see-vins', function () {
+        var $btn = $(this);
+
+        // Bootstrap doesn't support stacked modals, so step out of this one first.
+        var formulaModal = bootstrap.Modal.getInstance(document.getElementById('modalFormula'));
+        if (formulaModal) formulaModal.hide();
+
+        $modalVinListBody.html(loadingHtml());
+        bootstrap.Modal.getOrCreateInstance('#modalVinList').show();
+
+        $.getJSON(CalcBasis.url(BASE_URL + WIP_CALC_SOURCE + '/calc/detail/breakdown/vins'), {
+            part_number: $btn.data('part-number'),
+            shop_code: $btn.data('shop-code'),
+            model: $btn.data('model'),
+            suffix: $btn.data('suffix')
+        })
+            .done(function (resp) {
+                if (!resp.ok) {
+                    $modalVinListBody.html('<div class="alert alert-danger mb-0">' + esc(resp.message || 'Failed to load the VIN list.') + '</div>');
+                    return;
+                }
+                renderVinList(resp);
+            })
+            .fail(function () {
+                $modalVinListBody.html('<div class="alert alert-danger mb-0">Failed to reach the server.</div>');
+            });
+    });
+
+    // "Download Formula Detail" — the row-level export, on the current basis.
+    var $btnExportCalcDetail = $('#btnExportCalcDetail');
+    var exportDetailBaseHref = $btnExportCalcDetail.attr('href');
+
+    $btnExportCalcDetail.on('click', function (e) {
+        e.preventDefault();
+        $btnExportCalcDetail.attr('href', CalcBasis.url(exportDetailBaseHref));
+        downloadExcel($btnExportCalcDetail);
+    });
+
     // Switching basis re-runs the calculation server-side, and the export
     // and template links have to carry the new value too.
     $(document).on('calcbasis:change', function () {
@@ -412,6 +639,10 @@
         load();
     });
 
+    // The remembered basis (e.g. Part List) has to be on the export link from
+    // the start — not only after a filter or basis change — or the download
+    // silently falls back to the server default (Master BOM).
+    updateExportHref();
     updateTemplateHrefs();
     load();
 })(jQuery);

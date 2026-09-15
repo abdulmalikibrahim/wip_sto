@@ -17,7 +17,7 @@ class Wip extends MY_Controller
     {
         $data['title'] = 'Master WIP - KAP 1';
         $data['source'] = 'wip/kap1';
-        $data['shops'] = $this->config->item('wip_shop_labels');
+        $data['shops'] = $this->live_shop_labels('kap1');
         $data['page_js'] = 'assets/js/wip.js';
         $this->render('wip/index', $data, 'wip_kap1');
     }
@@ -26,9 +26,205 @@ class Wip extends MY_Controller
     {
         $data['title'] = 'Master WIP - KAP 2';
         $data['source'] = 'wip/kap2';
-        $data['shops'] = $this->config->item('wip_shop_labels');
+        $data['shops'] = $this->live_shop_labels('kap2');
         $data['page_js'] = 'assets/js/wip.js';
         $this->render('wip/index', $data, 'wip_kap2');
+    }
+
+    /**
+     * The shops a Master WIP page shows: the ones the live WIP server has
+     * (kap1_groups / kap2_groups) — not the upload-only WOS stage, which
+     * has its own "WIP WOS" page.
+     */
+    protected function live_shop_labels($source)
+    {
+        return array_intersect_key(
+            $this->config->item('wip_shop_labels'),
+            (array) $this->config->item($source . '_groups')
+        );
+    }
+
+    /**
+     * "WIP WOS IPI" / "WIP WOS FTI": the extra WIP stage before Welding, kept
+     * as two upload-only lists per KAP line. Both are stored in wip_data as
+     * shop 'wos' — so WIP Calc and WIP Summary count them together as WOS
+     * (shop code WOS3 / WOS4) — told apart by shopcode ('WOS IPI' / 'WOS FTI',
+     * config wos_types). Each list is also the unit list of its own
+     * "WIP Calc. IPI" / "WIP Calc. FTI" menu (Ippi_fti_model). The page
+     * reuses the Master WIP script, with the KAP lines as its tabs.
+     */
+    public function wos($type = 'ipi')
+    {
+        $code = $this->wos_code($type);
+        $data['title'] = 'WIP ' . $code;
+        $data['source'] = 'wip/wos-' . $type;
+        $data['wos_code'] = $code;
+        $data['calc_url'] = 'wip/calc-' . $type;
+        $data['calc_label'] = 'WIP Calc. ' . strtoupper($type);
+        $data['lines'] = $this->wos_lines();
+        $data['page_js'] = 'assets/js/wip.js';
+        $this->render('wip/wos', $data, 'wip_wos_' . $type);
+    }
+
+    public function wos_data($type, $line)
+    {
+        $code = $this->wos_code($type);
+        if (!isset($this->wos_lines()[$line])) {
+            $this->respond(array('ok' => false, 'message' => 'Unknown KAP line.', 'data' => array()));
+
+            return;
+        }
+
+        $this->load->model('Wip_data_model');
+        $this->respond($this->Wip_data_model->get_shop($line, 'wos', $code));
+    }
+
+    public function wos_export($type, $line)
+    {
+        $code = $this->wos_code($type);
+        if (!isset($this->wos_lines()[$line])) {
+            show_404();
+        }
+
+        $this->load->model('Wip_data_model');
+        $this->export($this->Wip_data_model->get_shop($line, 'wos', $code), $line, 'wos_' . $type);
+    }
+
+    public function wos_template($type)
+    {
+        $code = $this->wos_code($type);
+        $this->load->model('Wip_data_model');
+        $this->Wip_data_model->download_template('wos_' . $type, 'wos', $code);
+    }
+
+    /** Clear one KAP line's rows of one WOS list (AJAX — the Clear button on its tab). */
+    public function wos_clear($type, $line)
+    {
+        $this->require_admin();
+
+        $code = $this->wos_code($type);
+        if (!isset($this->wos_lines()[$line])) {
+            $this->output->set_content_type('application/json')->set_output(json_encode(array(
+                'status'  => 'error',
+                'message' => 'Unknown KAP line.',
+            )));
+
+            return;
+        }
+
+        $this->load->model('Wip_data_model');
+        $cleared = $this->Wip_data_model->clear_shop($line, 'wos', $code);
+        $label = $code . ' ' . $this->wos_lines()[$line];
+
+        $this->output->set_content_type('application/json')->set_output(json_encode(array(
+            'status'  => 'success',
+            'message' => $cleared > 0 ? "Cleared {$cleared} cached {$label} row(s)." : "No cached {$label} data to clear.",
+            'cleared' => $cleared,
+        )));
+    }
+
+    /**
+     * Upload units into one WOS list (IPI / FTI) of one KAP line (chosen in
+     * the form). Every row is stored as that line's 'wos' shop with the
+     * list's shopcode, in file order (= Sequence). Replace mode clears only
+     * that line's rows of that list.
+     */
+    public function wos_upload($type)
+    {
+        $this->require_admin();
+
+        $code = $this->wos_code($type);
+        $back = 'wip/wos-' . $type;
+
+        $line = (string) $this->input->post('line');
+        if (!isset($this->wos_lines()[$line])) {
+            set_flash('error', 'Please choose KAP 1 or KAP 2.');
+            redirect($back);
+        }
+
+        if (empty($_FILES['wip_file']['name'])) {
+            set_flash('error', 'Please choose an Excel file to upload.');
+            redirect($back);
+        }
+
+        $config['upload_path']   = sys_get_temp_dir();
+        $config['allowed_types'] = 'xlsx';
+        $config['max_size']      = 20480; // 20MB
+        $config['file_name']     = 'wip_wos_' . $type . '_upload_' . time() . '_' . uniqid();
+
+        $this->load->library('upload', $config);
+
+        if (!$this->upload->do_upload('wip_file')) {
+            set_flash('error', 'Upload failed: ' . strip_tags($this->upload->display_errors()));
+            redirect($back);
+        }
+
+        $uploaded = $this->upload->data();
+        $mode = $this->input->post('mode') === 'replace' ? 'replace' : 'append';
+
+        $this->load->model('Wip_data_model');
+        $parsed = $this->Wip_data_model->parse_excel($uploaded['full_path'], 'wos');
+        @unlink($uploaded['full_path']);
+
+        if (!$parsed['ok']) {
+            $this->Wip_data_model->log(array(
+                'source'    => $line,
+                'shop'      => 'wos',
+                'origin'    => 'upload',
+                'file_name' => $uploaded['client_name'],
+                'mode'      => $mode,
+                'status'    => 'failed',
+                'message'   => $code . ': ' . $parsed['message'],
+                'user_id'   => $this->auth_user['id'],
+            ));
+            set_flash('error', $parsed['message']);
+            redirect($back);
+        }
+
+        // Every row belongs to this list, whatever its Shop Code cell said.
+        foreach ($parsed['rows'] as &$row) {
+            $row['shopcode'] = $code;
+        }
+        unset($row);
+
+        if ($mode === 'replace') {
+            $this->Wip_data_model->clear_shop($line, 'wos', $code);
+        }
+
+        $result = $this->Wip_data_model->insert_rows($line, $parsed['rows']);
+        $message = "Inserted {$result['inserted']} {$code} row(s) into " . $this->wos_lines()[$line] . '.';
+
+        $this->Wip_data_model->log(array(
+            'source'     => $line,
+            'shop'       => 'wos',
+            'origin'     => 'upload',
+            'file_name'  => $uploaded['client_name'],
+            'mode'       => $mode,
+            'total_rows' => count($parsed['rows']),
+            'status'     => 'success',
+            'message'    => $message,
+            'user_id'    => $this->auth_user['id'],
+        ));
+
+        set_flash('success', 'WIP ' . $code . ' uploaded: ' . $message);
+        redirect($back);
+    }
+
+    /** WOS list key (ipi|fti) => its shopcode in wip_data; unknown -> 404. */
+    protected function wos_code($type)
+    {
+        $types = (array) $this->config->item('wos_types');
+        if (!isset($types[$type])) {
+            show_404();
+        }
+
+        return $types[$type];
+    }
+
+    /** KAP line key (wip_data.source) => label, for the WIP WOS pages. */
+    protected function wos_lines()
+    {
+        return array('kap1' => 'KAP 1', 'kap2' => 'KAP 2');
     }
 
     /**
@@ -186,24 +382,20 @@ class Wip extends MY_Controller
     }
 
     /**
-     * "WIP Calc Detail": row-level breakdown behind the KAP1 Calc totals —
-     * which cutoff VIN and how many matching WIP units produced each row's
-     * contribution (see Wip_calc_model::calc_detail()).
+     * The old "WIP Calc Detail" page — merged into the Calc page, where a
+     * shop's Net value now opens that part's Formula Detail. Kept as a
+     * redirect so old links/bookmarks still land somewhere useful.
      */
     public function kap1_calc_detail()
     {
-        $data['title'] = 'WIP Calc Detail - KAP 1';
-        $data['source'] = 'wip/kap1';
-        $data['page_js'] = 'assets/js/wip_calc_detail.js';
-        $this->render('wip/calc_detail', $data, 'wip_calc_kap1');
+        redirect('wip/kap1/calc');
     }
 
-    public function kap1_calc_detail_data()
-    {
-        $this->load->model('Wip_calc_model');
-        $this->respond_calc_detail($this->Wip_calc_model->calc_detail('kap1', $this->calc_basis()));
-    }
-
+    /**
+     * "Download Formula Detail": the row-level breakdown behind the KAP1
+     * Calc totals as .xlsx — which cutoff VIN and how many matching WIP
+     * units produced each BOM line's contribution (see calc_detail()).
+     */
     public function kap1_calc_detail_export()
     {
         $this->load->model('Wip_calc_model');
@@ -252,22 +444,6 @@ class Wip extends MY_Controller
     protected function calc_basis()
     {
         return $this->input->get('basis') === 'part_list' ? 'part_list' : 'bom';
-    }
-
-    protected function respond_calc_detail(array $result)
-    {
-        $rows = array();
-        foreach ($result['data'] as $i => $r) {
-            $rows[] = array_merge(array('no' => $i + 1), $r);
-        }
-
-        $this->output
-            ->set_content_type('application/json')
-            ->set_output(json_encode(array(
-                'status'  => $result['ok'] ? 'success' : 'error',
-                'message' => $result['message'],
-                'data'    => $rows,
-            )));
     }
 
     public function kap1_calc_upload()
@@ -340,16 +516,7 @@ class Wip extends MY_Controller
 
     public function kap2_calc_detail()
     {
-        $data['title'] = 'WIP Calc Detail - KAP 2';
-        $data['source'] = 'wip/kap2';
-        $data['page_js'] = 'assets/js/wip_calc_detail.js';
-        $this->render('wip/calc_detail', $data, 'wip_calc_kap2');
-    }
-
-    public function kap2_calc_detail_data()
-    {
-        $this->load->model('Wip_calc_model');
-        $this->respond_calc_detail($this->Wip_calc_model->calc_detail('kap2', $this->calc_basis()));
+        redirect('wip/kap2/calc');
     }
 
     public function kap2_calc_detail_export()
@@ -404,23 +571,25 @@ class Wip extends MY_Controller
     }
 
     /**
-     * "WIP Calc. KAP 1 & 2" — KAP1's and KAP2's calc() lists shown together
-     * (a plain union, not a re-aggregation), tagged with a Source column so
-     * it's clear which line each row came from. Read-only: cutoff VINs are
-     * still managed from the individual KAP1/KAP2 Calc pages.
+     * "WIP Summary" — per-part WIP by the shop the units are in (parts carried
+     * along the line), one card per shop showing that shop's own total, for
+     * KAP 1 & 2 together or one line alone. Read-only; see
+     * Wip_calc_model::summary().
      */
-    public function calc_combined()
-    {
-        $data['title'] = 'WIP Calc - KAP 1 & 2';
-        $data['shops'] = $this->config->item('wip_shop_labels');
-        $data['page_js'] = 'assets/js/wip_calc_combined.js';
-        $this->render('wip/calc_combined', $data, 'wip_calc_combined');
-    }
-
-    public function calc_combined_data()
+    public function summary()
     {
         $this->load->model('Wip_calc_model');
-        $result = $this->Wip_calc_model->calc_combined($this->calc_basis());
+        $data['title'] = 'WIP Summary';
+        $data['shops'] = $this->Wip_calc_model->summary_labels();
+        $data['stages'] = $this->Wip_calc_model->summary_stages();
+        $data['page_js'] = 'assets/js/wip_summary.js';
+        $this->render('wip/summary', $data, 'wip_summary');
+    }
+
+    public function summary_data()
+    {
+        $this->load->model('Wip_calc_model');
+        $result = $this->Wip_calc_model->summary($this->summary_scope(), $this->calc_basis());
 
         $rows = array();
         foreach ($result['data'] as $i => $r) {
@@ -432,15 +601,29 @@ class Wip extends MY_Controller
             ->set_output(json_encode(array(
                 'status'  => $result['ok'] ? 'success' : 'error',
                 'message' => $result['message'],
+                'totals'  => $result['totals'],
+                'parts'   => $result['parts'],
                 'data'    => $rows,
             )));
     }
 
-    public function calc_combined_export()
+    public function summary_export()
     {
         $this->load->model('Wip_calc_model');
-        $hide_zero = $this->input->get('hide_zero') === '1';
-        $this->Wip_calc_model->export_combined('WIP Calc - KAP 1 & 2', $hide_zero, $this->calc_basis());
+        $this->Wip_calc_model->export_summary(
+            $this->summary_scope(),
+            (string) $this->input->get('stage'),
+            $this->input->get('hide_zero') === '1',
+            $this->calc_basis()
+        );
+    }
+
+    /** Which KAP line(s) WIP Summary covers: 'kap1', 'kap2', or 'all' (default). */
+    protected function summary_scope()
+    {
+        $scope = $this->input->get('scope');
+
+        return in_array($scope, array('kap1', 'kap2'), true) ? $scope : 'all';
     }
 
     protected function handle_calc_cutoff_set($source)
@@ -713,7 +896,8 @@ class Wip extends MY_Controller
         }
 
         if ($mode === 'replace') {
-            $this->Wip_data_model->truncate_source($source);
+            // Only this page's own shops — never the WOS rows from the WIP WOS page.
+            $this->Wip_data_model->truncate_source($source, array_keys($this->live_shop_labels($source)));
         }
 
         $result = $this->Wip_data_model->insert_rows($source, $parsed['rows']);

@@ -59,8 +59,12 @@ $config['kap2_groups'] = array(
     ),
 );
 
-// Human readable labels for each shop key, used across the WIP views.
+// Human readable labels for each shop key, used across the WIP views, in
+// line order. 'wos' is the extra WIP stage before Welding — upload only (the
+// "WIP WOS" menu), so it has no kap1_groups/kap2_groups entry and doesn't
+// show on the Master WIP KAP 1 / KAP 2 pages.
 $config['wip_shop_labels'] = array(
+    'wos'  => 'WOS',
     'weld' => 'Welding',
     'toso' => 'Toso',
     'assy' => 'Assy',
@@ -69,11 +73,21 @@ $config['wip_shop_labels'] = array(
 // ---------------------------------------------------------------
 // WIP Calc — maps each WIP shop key to the BOM `shop_code` that carries
 // its part usage, per KAP line. Used by Wip_calc_model to filter/sum the
-// Master BOM against the cached WIP data for that line.
+// Master BOM against the cached WIP data for that line. The order is the
+// line order (WIP Summary carries parts downstream along it).
 // ---------------------------------------------------------------
 $config['wip_calc_shop_codes'] = array(
-    'kap1' => array('weld' => 'WELD3', 'toso' => 'TOSO3', 'assy' => 'ASSY3'),
-    'kap2' => array('weld' => 'WELD4', 'toso' => 'TOSO4', 'assy' => 'ASSY4'),
+    'kap1' => array('wos' => 'WOS3', 'weld' => 'WELD3', 'toso' => 'TOSO3', 'assy' => 'ASSY3'),
+    'kap2' => array('wos' => 'WOS4', 'weld' => 'WELD4', 'toso' => 'TOSO4', 'assy' => 'ASSY4'),
+);
+
+// WIP WOS is kept as two upload-only lists per KAP line — WOS IPI and WOS FTI.
+// Both are stored in wip_data as shop 'wos' (so WIP Calc / WIP Summary count
+// them together as WOS), told apart by their shopcode. Each is also the unit
+// list of its own "WIP Calc. IPI" / "WIP Calc. FTI" menu. Key => shopcode.
+$config['wos_types'] = array(
+    'ipi'  => 'WOS IPI',
+    'fti' => 'WOS FTI',
 );
 
 // Local, untracked overrides (real cookies/credentials for this environment).

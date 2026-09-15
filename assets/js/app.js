@@ -28,7 +28,7 @@
     // ------------------------------------------------------------
     // WIP Calc basis — whether the calculation reads part usage from
     // the Master BOM or the Part List. Remembered per browser so the
-    // choice carries across the Calc, Detail and Combined pages, and
+    // choice carries across the Calc, Detail and Summary pages, and
     // sent along as ?basis= on every calc request, export and template.
     // ------------------------------------------------------------
     window.CalcBasis = {

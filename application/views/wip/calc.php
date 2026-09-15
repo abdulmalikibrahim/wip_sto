@@ -6,12 +6,13 @@
     <div class="card-body py-3">
         <div class="row g-3" id="cutoffStatus">
             <?php foreach ($shops as $key => $label): ?>
-            <div class="col-sm-4">
+            <div class="col-sm-6 col-xl-3">
                 <div class="stat-card stat-card-filter" data-cutoff-shop="<?= $key ?>" title="Click to show only <?= html_escape($label) ?> data">
                     <div class="stat-icon"><i class="bi bi-signpost-2"></i></div>
                     <div class="flex-grow-1">
                         <div class="stat-value fs-6" data-cutoff-summary>&mdash;</div>
                         <div class="stat-label"><?= html_escape($label) ?> parts with a cutoff VIN</div>
+                        <div class="small mt-1">Total Net: <strong class="text-success" data-net-total>&mdash;</strong></div>
                     </div>
                     <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
                     <button type="button" class="btn btn-sm btn-outline-danger btn-clear-cutoff" data-shop="<?= $key ?>" data-shop-label="<?= html_escape($label) ?>" title="Clear all <?= html_escape($label) ?> cutoff VINs (back to Gross totals)">
@@ -38,14 +39,14 @@
 </div>
 
 <div class="d-flex flex-wrap justify-content-end align-items-center gap-2 mb-3">
-    <a href="<?= base_url($source . '/calc/detail') ?>" class="btn btn-sm btn-info">
-        <i class="bi bi-list-check"></i> View Calculation Detail
-    </a>
     <button type="button" class="btn btn-sm btn-secondary" id="btnToggleHideZero">
         <i class="bi bi-eye-slash"></i> Hide Zero-Total Rows
     </button>
     <a href="<?= base_url($source . '/calc/export') ?>" class="btn btn-sm btn-success" id="btnExportCalc">
         <i class="bi bi-file-earmark-excel"></i> Download Excel
+    </a>
+    <a href="<?= base_url($source . '/calc/detail/export') ?>" class="btn btn-sm btn-outline-success" id="btnExportCalcDetail" title="Every BOM line with its Cutoff VIN, Unit Count × Qty and Subtotal">
+        <i class="bi bi-file-earmark-spreadsheet"></i> Download Formula Detail
     </a>
     <div class="dropdown">
         <button type="button" class="btn btn-sm btn-secondary dropdown-toggle" data-bs-toggle="dropdown">
@@ -82,7 +83,7 @@
 <div class="card">
     <div class="card-header">
         <i class="bi bi-table me-1"></i> WIP Calc List
-        <span class="text-secondary small ms-1">— each shop's Cutoff VIN column shows the VIN used to work out that row's quantity (blank = totaled, no cutoff set yet)</span>
+        <span class="text-secondary small ms-1">— klik angka <strong>Net</strong> sebuah shop (<i class="bi bi-calculator"></i>) untuk melihat formula-nya. Kolom Cutoff VIN = VIN yang dipakai (kosong = belum ada cutoff, Net 0)</span>
         <span id="calcShopFilterBadge" class="badge bg-primary ms-2 d-none">
             Showing: <span id="calcShopFilterName"></span>
             <i class="bi bi-x-circle ms-1" id="btnClearShopFilter" role="button" title="Clear filter"></i>
@@ -132,10 +133,11 @@
             <p class="mb-2">Berikut cara angka Welding/Toso/Assy di atas dihitung, siapa tahu ada yang kelihatan kecil atau 0:</p>
             <ul class="mb-2 ps-3">
                 <li class="mb-1">Untuk setiap part, sistem menghitung unit dari data <a href="<?= base_url($source) ?>">Master WIP</a> yang tersimpan, yang Model + Suffix-nya cocok dengan baris BOM part tersebut, lalu dikalikan dengan Qty di BOM.</li>
-                <li class="mb-1">Kalau sebuah part belum diupload cutoff VIN-nya, sistem menghitung <em>semua</em> unit yang ada di shop tersebut — tidak ada yang dikecualikan.</li>
+                <li class="mb-1">Kalau sebuah part belum punya cutoff VIN, angka <strong>Net</strong>-nya <strong>0</strong> — belum ada yang dihitung. <strong>Gross</strong> tetap menunjukkan semua unit yang ada di shop tersebut.</li>
                 <li class="mb-1">Angka tetap bisa menunjukkan <strong>0</strong> meskipun belum ada cutoff, kalau data Master WIP untuk shop itu belum ditarik/diupload, atau memang belum ada unit yang Model + Suffix-nya cocok dengan part tersebut.</li>
                 <li class="mb-1">Setelah cutoff VIN untuk sebuah part diupload (lihat tombol <strong>Upload Cutoff VIN</strong> di atas), hanya unit dari VIN itu ke atas yang akan dihitung untuk part tersebut — arahkan kursor ke angkanya untuk melihat VIN cutoff yang dipakai.</li>
-                <li>Tiap shop punya 3 kolom: <strong>Gross</strong> = total kalau semua unit dihitung tanpa batas cutoff, <strong>Cutoff</strong> = bagian unit lama yang dikecualikan (sebelum VIN cutoff), <strong>Net</strong> = Gross &minus; Cutoff (angka final yang sebenarnya terpakai).</li>
+                <li class="mb-1">Kalau satu part tercatat lebih dari sekali untuk suffix yang sama di shop yang sama (mis. beberapa varian warna yang jadi satu part number, atau baris <code>ASSY3</code> dan <code>ASSY3,ASSY4</code> di Part List), suffix itu hanya dihitung <strong>sekali</strong>, pakai qty terbesar.</li>
+                <li>Tiap shop punya 3 kolom: <strong>Gross</strong> = total kalau semua unit dihitung tanpa batas cutoff, <strong>Cutoff</strong> = bagian unit lama yang dikecualikan (sebelum VIN cutoff), <strong>Net</strong> = Gross &minus; Cutoff (angka final yang sebenarnya terpakai). Pengurangan ini hanya berlaku kalau ada cutoff VIN; kalau belum ada, <strong>Cutoff 0</strong> dan <strong>Net 0</strong>, hanya Gross yang terisi.</li>
             </ul>
             <p class="mb-0">Singkatnya: angka yang kecil atau 0 biasanya cuma berarti data WIP atau cutoff VIN untuk part itu belum tersedia, bukan berarti ada yang salah.</p>
         </div>
@@ -227,6 +229,38 @@
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- Formula Detail Modal — opened by clicking a shop's Net value in the list -->
+<div class="modal fade" id="modalFormula" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-calculator me-1"></i> Formula Detail</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="modalFormulaBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- VIN List Modal — the units behind one suffix row's Matching Units count -->
+<div class="modal fade" id="modalVinList" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-upc-scan me-1"></i> Matching Units — VIN List</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="modalVinListBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
         </div>
     </div>
 </div>

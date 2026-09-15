@@ -80,6 +80,12 @@ a { color: var(--app-accent); }
     padding: 0.9rem 1.25rem 0.25rem;
 }
 
+/* Collapsible sidebar groups (KAP 1 / KAP 2 / IPI / FTI -> WIP, Calculation) */
+.app-sidebar .nav-group-chevron { font-size: 0.75rem; width: auto; transition: transform .2s ease; }
+.app-sidebar .nav-group-toggle:not(.collapsed) .nav-group-chevron { transform: rotate(180deg); }
+.app-sidebar .nav-group-toggle.has-active { color: #fff; }
+.app-sidebar .nav-sub-link { padding-left: 2.6rem; font-size: 0.86rem; }
+
 .app-sidebar-backdrop {
     display: none;
     position: fixed;
