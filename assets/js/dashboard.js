@@ -75,9 +75,13 @@
     }
 
     // ------------------------------------------------------------
-    // Cutoff VIN conveyor: units enter on the left (newest). The flagged
-    // unit is the cutoff VIN — it and every unit after it are counted,
-    // the older units to its right are not. Loops after NEW_UNITS arrive.
+    // Cutoff VIN conveyor: units are laid out by SEQUENCE, descending to the
+    // right — the highest sequence sits at the left, like the Master WIP list
+    // showing the highest Sequence at the top (sequence is the only order the
+    // WIP data has; there is no scan date). The flagged unit is the cutoff
+    // VIN; it and every HIGHER sequence to its left are counted
+    // (`id >= boundary`, the PDF's "dari cut off itu sampai atas"), the lower
+    // sequences to its right are not. Loops after NEW_UNITS arrive.
     // ------------------------------------------------------------
     var $units = $('#conveyorUnits');
     if ($units.length) {
@@ -91,10 +95,11 @@
         var serial = 0;
         var tickNo = 0;
 
-        var makeUnit = function (state, vin, animate) {
+        // The label under each unit is its SEQUENCE number, not a VIN.
+        var makeUnit = function (state, seq, animate) {
             return $('<div class="c-unit ' + state + (animate ? ' enter' : '') + '">' +
                 '<div class="c-body"><i class="bi bi-car-front-fill"></i></div>' +
-                '<div class="c-vin">' + vin + '</div></div>');
+                '<div class="c-vin">' + seq + '</div></div>');
         };
 
         var bump = function ($el) {
@@ -111,13 +116,13 @@
             bump($net);
         };
 
-        // Oldest units sit at the right (near the exit), the cutoff unit in front of them.
+        // Sequences below the cutoff sit at the right, the cutoff unit in front of them.
         var reset = function (animate) {
             $units.empty();
             for (var v = 101; v <= 104; v++) {
-                $units.prepend(makeUnit('old', 'V' + v, animate));
+                $units.prepend(makeUnit('old', v, animate));
             }
-            $units.prepend(makeUnit('cut', 'V105', animate));
+            $units.prepend(makeUnit('cut', 105, animate));
             serial = 105;
             tickNo = 0;
             setCount(1);
@@ -125,17 +130,17 @@
 
         var addUnit = function (animate) {
             serial++;
-            $units.prepend(makeUnit('new', 'V' + serial, animate));
+            $units.prepend(makeUnit('new', serial, animate));
             setCount(counted + 1);
 
             var $inLine = $units.children(':not(.leave)');
             if ($inLine.length > MAX_VISIBLE) {
-                var $oldest = $inLine.last();
+                var $lowest = $inLine.last(); // the lowest sequence leaves at the right
                 if (animate) {
-                    $oldest.addClass('leave');
-                    setTimeout(function () { $oldest.remove(); }, 500);
+                    $lowest.addClass('leave');
+                    setTimeout(function () { $lowest.remove(); }, 500);
                 } else {
-                    $oldest.remove();
+                    $lowest.remove();
                 }
             }
         };

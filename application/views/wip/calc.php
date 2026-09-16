@@ -83,7 +83,7 @@
 <div class="card">
     <div class="card-header">
         <i class="bi bi-table me-1"></i> WIP Calc List
-        <span class="text-secondary small ms-1">— klik angka <strong>Net</strong> sebuah shop (<i class="bi bi-calculator"></i>) untuk melihat formula-nya. Kolom Cutoff VIN = VIN yang dipakai (kosong = belum ada cutoff, Net 0)</span>
+        <span class="text-secondary small ms-1">— klik angka <strong>Net</strong> sebuah shop (<i class="bi bi-calculator"></i>) untuk melihat formula-nya. Kolom Cutoff = VIN yang dipakai dan urutannya (Seq) di daftar WIP shop tersebut (kosong = belum ada cutoff, Net 0)</span>
         <span id="calcShopFilterBadge" class="badge bg-primary ms-2 d-none">
             Showing: <span id="calcShopFilterName"></span>
             <i class="bi bi-x-circle ms-1" id="btnClearShopFilter" role="button" title="Clear filter"></i>
@@ -104,7 +104,7 @@
                         <?php endforeach; ?>
                         <th colspan="3" class="text-center col-group-start">Total</th>
                         <?php foreach ($shops as $key => $label): ?>
-                        <th><?= html_escape($label) ?> Cutoff VIN</th>
+                        <th colspan="2" class="text-center col-group-start"><?= html_escape($label) ?> Cutoff</th>
                         <?php endforeach; ?>
                     </tr>
                     <tr>
@@ -114,7 +114,8 @@
                         <th>Net</th>
                         <?php endfor; ?>
                         <?php foreach ($shops as $key => $label): ?>
-                        <th></th>
+                        <th class="col-group-start">VIN</th>
+                        <th class="text-center" title="Urutan VIN cutoff itu di daftar WIP <?= html_escape($label) ?> (Sequence / total unit)">Seq</th>
                         <?php endforeach; ?>
                     </tr>
                 </thead>

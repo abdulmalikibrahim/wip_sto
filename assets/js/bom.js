@@ -22,8 +22,16 @@
             data: null,
             orderable: false,
             searchable: false,
+            className: 'text-nowrap',
             render: function (row) {
-                return '<button class="btn btn-sm btn-danger btn-delete-bom" data-id="' + row.id + '" title="Delete">' +
+                // Baris ini dibawa lewat data-row supaya form Edit tidak perlu
+                // request lagi ke server (dan aman dari child row responsive).
+                var data = encodeURIComponent(JSON.stringify(row));
+                return '<button class="btn btn-sm btn-outline-primary btn-edit-bom me-1" title="Edit" data-row="' +
+                    data + '"><i class="bi bi-pencil"></i></button>' +
+                    '<button class="btn btn-sm btn-outline-secondary btn-copy-bom me-1" title="Copy — isi form baru dengan data baris ini" data-row="' +
+                    data + '"><i class="bi bi-files"></i></button>' +
+                    '<button class="btn btn-sm btn-danger btn-delete-bom" data-id="' + row.id + '" title="Delete">' +
                     '<i class="bi bi-trash"></i></button>';
             }
         });
@@ -70,6 +78,69 @@
     $('#btnDownloadBom').on('click', function (e) {
         e.preventDefault();
         downloadExcel($(this));
+    });
+
+    // ---- Tambah / Edit / Copy satu baris BOM (admin) ----
+    var BOM_FIELDS = ['material', 'katashiki', 'model', 'suffix', 'component', 'part_number',
+        'material_description', 'qty', 'uom', 'shop_code'];
+
+    // mode 'edit' menyimpan ke baris yang sama; 'add' dan 'copy' menyimpan
+    // sebagai baris baru — bedanya cuma form 'copy' sudah terisi.
+    function openBomModal(row, mode) {
+        $('#bomEditAlert').addClass('d-none').text('');
+        $('#bomEditId').val(mode === 'edit' && row ? row.id : '');
+        BOM_FIELDS.forEach(function (field) {
+            $('#bomEdit_' + field).val(row && row[field] != null ? row[field] : '');
+        });
+        $('#bomModalTitle').text(mode === 'edit' ? 'Edit BOM Entry'
+            : (mode === 'copy' ? 'Copy BOM Entry' : 'Tambah BOM Entry'));
+        bootstrap.Modal.getOrCreateInstance('#modalEditBom').show();
+    }
+
+    function bomRowOf($btn) {
+        return JSON.parse(decodeURIComponent($btn.attr('data-row')));
+    }
+
+    $('#btnAddBom').on('click', function () {
+        openBomModal(null, 'add');
+    });
+
+    $(document).on('click', '#tblBom .btn-edit-bom', function () {
+        openBomModal(bomRowOf($(this)), 'edit');
+    });
+
+    $(document).on('click', '#tblBom .btn-copy-bom', function () {
+        openBomModal(bomRowOf($(this)), 'copy');
+    });
+
+    $('#formEditBom').on('submit', function (e) {
+        e.preventDefault();
+        var $alert = $('#bomEditAlert').addClass('d-none').text('');
+        var $btn = $('#btnSaveEditBom').prop('disabled', true);
+        var id = $('#bomEditId').val();
+
+        var payload = {};
+        BOM_FIELDS.forEach(function (field) {
+            payload[field] = $('#bomEdit_' + field).val();
+        });
+
+        $.post(BASE_URL + 'bom/' + (id ? 'update/' + id : 'create'), payload, null, 'json')
+            .done(function (resp) {
+                if (resp.status !== 'success') {
+                    $alert.removeClass('d-none').text(resp.message || 'Gagal menyimpan.');
+                    return;
+                }
+                toast('success', resp.message || 'Tersimpan.');
+                bootstrap.Modal.getOrCreateInstance('#modalEditBom').hide();
+                table.ajax.reload(null, false);
+            })
+            .fail(function (xhr) {
+                $alert.removeClass('d-none')
+                    .text((xhr.responseJSON && xhr.responseJSON.message) || 'Gagal menghubungi server.');
+            })
+            .always(function () {
+                $btn.prop('disabled', false);
+            });
     });
 
     $('#tblBom').on('click', '.btn-delete-bom', function () {

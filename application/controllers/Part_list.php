@@ -105,11 +105,20 @@ class Part_list extends MY_Controller
     }
 
     /**
-     * Download the actual Part List data currently in the table.
+     * Download the actual Part List data currently in the table (.xlsx).
      */
     public function export()
     {
         $this->Part_list_model->export_data($this->input->get('model_filter'));
+    }
+
+    /**
+     * Same data as CSV, streamed row by row — the practical way to get the
+     * full ~138k-row table out, which the .xlsx export can't manage.
+     */
+    public function export_csv()
+    {
+        $this->Part_list_model->export_csv($this->input->get('model_filter'));
     }
 
     /**
@@ -222,6 +231,44 @@ class Part_list extends MY_Controller
 
         set_flash($notes ? 'warning' : 'success', $message);
         redirect('part-list');
+    }
+
+    /** Add one Part List entry by hand (AJAX only — "Tambah Manual" / "Copy"). */
+    public function create()
+    {
+        $this->require_admin();
+
+        $result = $this->Part_list_model->create($this->posted_row());
+
+        $this->output->set_content_type('application/json')->set_output(json_encode(array(
+            'status'  => $result['ok'] ? 'success' : 'error',
+            'message' => $result['message'],
+        )));
+    }
+
+    /** The editable Part List fields as posted by the Add / Edit / Copy modal. */
+    protected function posted_row()
+    {
+        $row = array();
+        foreach (array('model', 'suffix', 'component', 'part_number',
+                     'material_description', 'qty', 'uom', 'shop_code') as $field) {
+            $row[$field] = (string) $this->input->post($field);
+        }
+
+        return $row;
+    }
+
+    /** Edit one Part List entry (AJAX only — the table's Edit button). */
+    public function update($id)
+    {
+        $this->require_admin();
+
+        $result = $this->Part_list_model->update($id, $this->posted_row());
+
+        $this->output->set_content_type('application/json')->set_output(json_encode(array(
+            'status'  => $result['ok'] ? 'success' : 'error',
+            'message' => $result['message'],
+        )));
     }
 
     public function delete($id)

@@ -8,6 +8,9 @@
             <i class="bi bi-download me-1"></i> Download Template
         </a>
         <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
+        <button type="button" class="btn btn-success btn-sm" id="btnAddBom">
+            <i class="bi bi-plus-circle me-1"></i> Tambah Manual
+        </button>
         <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalUpload">
             <i class="bi bi-upload me-1"></i> Upload BOM
         </button>
@@ -20,22 +23,7 @@
     <div class="mt-2 small text-secondary">Uploading BOM data, please wait...</div>
 </div>
 
-<div class="card mb-3">
-    <div class="card-body py-3">
-        <div class="row g-3">
-            <div class="col-sm-4 col-lg-3">
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="bi bi-list-columns-reverse"></i></div>
-                    <div>
-                        <div class="stat-value"><?= number_format($total_bom) ?></div>
-                        <div class="stat-label">Total BOM Records</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
+<?php // Total baris tidak dikartukan lagi — kartu "All" di filter Model sudah menampilkannya. ?>
 <?php if (!empty($model_summary)): ?>
 <div class="card mb-3">
     <div class="card-header">
@@ -90,6 +78,76 @@
         </div>
     </div>
 </div>
+
+<?php if (($auth_user['role'] ?? '') === 'admin'): ?>
+<!-- Edit Modal -->
+<div class="modal fade" id="modalEditBom" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form id="formEditBom">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil me-1"></i> <span id="bomModalTitle">Edit BOM Entry</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="bomEditAlert" class="alert alert-danger d-none py-2 small"></div>
+                    <input type="hidden" id="bomEditId" value="">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small">Material</label>
+                            <input type="text" class="form-control form-control-sm" id="bomEdit_material" autocomplete="off">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Katashiki</label>
+                            <input type="text" class="form-control form-control-sm" id="bomEdit_katashiki" autocomplete="off">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Model</label>
+                            <input type="text" class="form-control form-control-sm" id="bomEdit_model" autocomplete="off">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Suffix</label>
+                            <input type="text" class="form-control form-control-sm" id="bomEdit_suffix" autocomplete="off">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Component</label>
+                            <input type="text" class="form-control form-control-sm" id="bomEdit_component" autocomplete="off">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Part Number</label>
+                            <input type="text" class="form-control form-control-sm" id="bomEdit_part_number" autocomplete="off">
+                            <div class="form-text">Dikosongkan = diambil dari Component (akhiran &quot;-00&quot; dibuang).</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small">Material Description</label>
+                            <input type="text" class="form-control form-control-sm" id="bomEdit_material_description" autocomplete="off">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Qty</label>
+                            <input type="number" step="0.001" class="form-control form-control-sm" id="bomEdit_qty" autocomplete="off">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Uom</label>
+                            <input type="text" class="form-control form-control-sm" id="bomEdit_uom" autocomplete="off">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Shop Code</label>
+                            <input type="text" class="form-control form-control-sm text-uppercase" id="bomEdit_shop_code" autocomplete="off">
+                            <div class="form-text">Boleh lebih dari satu, pisahkan koma: <code>WELD3,ASSY3</code>.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success btn-sm" id="btnSaveEditBom">
+                        <i class="bi bi-check-lg me-1"></i> Simpan
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- Upload Modal -->
 <div class="modal fade" id="modalUpload" tabindex="-1">

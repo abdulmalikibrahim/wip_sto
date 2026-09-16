@@ -1,13 +1,21 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
     <h1 class="page-title mb-0">Part List</h1>
     <div class="d-flex gap-2">
-        <a href="<?= base_url('part-list/export') ?>" class="btn btn-success btn-sm" id="btnDownloadPartList">
-            <i class="bi bi-file-earmark-arrow-down me-1"></i> Download
+        <a href="<?= base_url('part-list/export-csv') ?>" class="btn btn-success btn-sm" id="btnDownloadPartList"
+           title="Unduh sebagai CSV dengan format yang sama dengan template upload — ringan dan langsung mulai walau ratusan ribu baris">
+            <i class="bi bi-filetype-csv me-1"></i> Download CSV
+        </a>
+        <a href="<?= base_url('part-list/export') ?>" class="btn btn-outline-success btn-sm" id="btnDownloadPartListXlsx"
+           title="Unduh sebagai Excel (.xlsx) dengan format yang sama dengan template upload — bisa diedit lalu diupload balik">
+            <i class="bi bi-file-earmark-excel me-1"></i> Excel
         </a>
         <a href="<?= base_url('part-list/template') ?>" class="btn btn-secondary btn-sm">
             <i class="bi bi-download me-1"></i> Download Template
         </a>
         <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
+        <button type="button" class="btn btn-success btn-sm" id="btnAddPartList">
+            <i class="bi bi-plus-circle me-1"></i> Tambah Manual
+        </button>
         <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalUpload">
             <i class="bi bi-upload me-1"></i> Upload Part List
         </button>
@@ -20,22 +28,7 @@
     <div class="mt-2 small text-secondary">Uploading Part List data, please wait...</div>
 </div>
 
-<div class="card mb-3">
-    <div class="card-body py-3">
-        <div class="row g-3">
-            <div class="col-sm-4 col-lg-3">
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="bi bi-ui-checks-grid"></i></div>
-                    <div>
-                        <div class="stat-value"><?= number_format($total_part_list) ?></div>
-                        <div class="stat-label">Total Part List Records</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
+<?php // Total baris tidak dikartukan lagi — kartu "All" di filter Model sudah menampilkannya. ?>
 <?php if (!empty($model_summary)): ?>
 <div class="card mb-3">
     <div class="card-header">
@@ -189,6 +182,68 @@
         </div>
     </div>
 </div>
+
+<?php if (($auth_user['role'] ?? '') === 'admin'): ?>
+<!-- Edit Modal -->
+<div class="modal fade" id="modalEditPartList" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form id="formEditPartList">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil me-1"></i> <span id="partListModalTitle">Edit Part List Entry</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="partListEditAlert" class="alert alert-danger d-none py-2 small"></div>
+                    <input type="hidden" id="partListEditId" value="">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small">Model</label>
+                            <input type="text" class="form-control form-control-sm" id="partListEdit_model" autocomplete="off">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Suffix</label>
+                            <input type="text" class="form-control form-control-sm" id="partListEdit_suffix" autocomplete="off">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Component</label>
+                            <input type="text" class="form-control form-control-sm" id="partListEdit_component" autocomplete="off">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Part Number</label>
+                            <input type="text" class="form-control form-control-sm" id="partListEdit_part_number" autocomplete="off">
+                            <div class="form-text">Dikosongkan = diambil dari Component (akhiran &quot;-00&quot; dibuang).</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small">Material Description</label>
+                            <input type="text" class="form-control form-control-sm" id="partListEdit_material_description" autocomplete="off">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Qty</label>
+                            <input type="number" step="0.001" class="form-control form-control-sm" id="partListEdit_qty" autocomplete="off">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Uom</label>
+                            <input type="text" class="form-control form-control-sm" id="partListEdit_uom" autocomplete="off">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Shop Code</label>
+                            <input type="text" class="form-control form-control-sm text-uppercase" id="partListEdit_shop_code" autocomplete="off">
+                            <div class="form-text">Boleh lebih dari satu, pisahkan koma: <code>WELD3,ASSY3</code>.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success btn-sm" id="btnSaveEditPartList">
+                        <i class="bi bi-check-lg me-1"></i> Simpan
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- Upload Modal -->
 <div class="modal fade" id="modalUpload" tabindex="-1">

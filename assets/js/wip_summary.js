@@ -58,10 +58,21 @@
         {
             data: 'part_number',
             render: function (value, type, row) {
-                if (type !== 'display' || !row.juklak_main) return type === 'display' ? esc(value) : value;
+                if (type !== 'display') return value;
+
+                var html = esc(value);
                 // Juklak: represented by its main part (on at least one line) — counted as 0 there.
-                return esc(value) + ' <span class="badge text-bg-warning text-dark" title="Juklak: sudah diwakili main part ' +
-                    esc(row.juklak_main) + ' — dihitung 0">Juklak &rarr; ' + esc(row.juklak_main) + '</span>';
+                if (row.juklak_main) {
+                    html += ' <span class="badge text-bg-warning text-dark" title="Juklak: sudah diwakili main part ' +
+                        esc(row.juklak_main) + ' — dihitung 0">Juklak &rarr; ' + esc(row.juklak_main) + '</span>';
+                }
+                // Ditandai "tidak dihitung" di menu Summary Tanpa Cutoff, dengan alasannya.
+                if (row.excluded_reason) {
+                    html += ' <span class="badge text-bg-dark" title="Tidak dihitung: ' + esc(row.excluded_reason) +
+                        '">Tidak dihitung</span>';
+                }
+
+                return html;
             }
         },
         { data: 'material_description' },
@@ -86,6 +97,17 @@
         columns.push({
             data: card + '_vin',
             className: 'small',
+            render: function (value, type) {
+                if (type !== 'display') return value || '';
+                return value ? esc(value) : '<span class="text-secondary">—</span>';
+            }
+        });
+        // That VIN's Sequence in the card's own shop ("131 / 200"), labelled per
+        // KAP line when both are in scope — same shape as the VIN column itself.
+        indexes.push(columns.length);
+        columns.push({
+            data: card + '_vin_seq',
+            className: 'text-center small',
             render: function (value, type) {
                 if (type !== 'display') return value || '';
                 return value ? esc(value) : '<span class="text-secondary">—</span>';

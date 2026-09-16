@@ -20,12 +20,28 @@
             ' — dihitung 0">Juklak &rarr; ' + esc(row.juklak_main) + '</span>';
     }
 
+    // Ditandai "tidak dihitung" di menu Summary Tanpa Cutoff — dihitung 0, dengan alasannya.
+    function excludedBadge(row) {
+        if (!row.excluded_reason) return '';
+        return ' <span class="badge text-bg-dark" title="Tidak dihitung: ' + esc(row.excluded_reason) +
+            '">Tidak dihitung</span>';
+    }
+
+    // Part Special: shop mana saja yang dihitung untuk part ini (menu Part Special).
+    function specialBadge(row) {
+        if (!row.special_shops) return '';
+        return ' <span class="badge text-bg-info" title="Part Special: dihitung di ' + esc(row.special_shops) +
+            ' — mulai cutoff VIN ' + esc(row.special_start) + ', shop lain 0">Special: ' + esc(row.special_shops) + '</span>';
+    }
+
     var columns = [
         { data: 'no', orderable: false, searchable: false },
         {
             data: 'part_number',
             render: function (value, type, row) {
-                return type === 'display' ? esc(value) + juklakBadge(row) : value;
+                return type === 'display'
+                    ? esc(value) + juklakBadge(row) + excludedBadge(row) + specialBadge(row)
+                    : value;
             }
         },
         { data: 'material_description' },
@@ -102,6 +118,17 @@
             render: function (value, type) {
                 if (type !== 'display') return value || '';
                 return value ? esc(value) : '<span class="text-secondary">—</span>';
+            }
+        });
+        // Where that VIN sits in the shop's cached WIP list — the same Sequence
+        // the Master WIP page shows, so the unit can be found there by number.
+        columns.push({
+            data: shop + '_vin_seq',
+            className: 'text-center small',
+            render: function (value, type, row) {
+                if (type !== 'display') return value == null ? 0 : value;
+                if (value == null) return '<span class="text-secondary">—</span>';
+                return esc(value) + ' <span class="text-secondary">/ ' + esc(row[shop + '_vin_total']) + '</span>';
             }
         });
     });

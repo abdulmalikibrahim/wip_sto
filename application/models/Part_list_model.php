@@ -106,6 +106,110 @@ class Part_list_model extends CI_Model
         return $this->db->get_where($this->table, array('id' => $id))->row_array();
     }
 
+    /**
+     * Tambah satu baris Part List dari tombol "Tambah Manual" / "Copy".
+     * Aturannya sama dengan update(), termasuk penjagaan supaya tidak bentrok
+     * dengan baris lain pada Model + Suffix + Part Number + Shop Code.
+     *
+     * @return array{ok:bool, message:string, id?:int}
+     */
+    public function create(array $data)
+    {
+        $clean = $this->clean_row($data);
+        if (isset($clean['error'])) {
+            return array('ok' => false, 'message' => $clean['error']);
+        }
+        if ($this->row_clash($clean['row'], null)) {
+            return array('ok' => false, 'message' => 'Sudah ada baris dengan Model + Suffix + Part Number + Shop Code yang sama.');
+        }
+
+        $this->db->insert($this->table, array_merge($clean['row'], array('created_at' => date('Y-m-d H:i:s'))));
+
+        return array('ok' => true, 'message' => 'Baris Part List ditambahkan.', 'id' => (int) $this->db->insert_id());
+    }
+
+    /**
+     * Validasi + normalisasi satu baris Part List dari form (dipakai create()
+     * dan update()).
+     *
+     * @return array{row?:array, error?:string}
+     */
+    protected function clean_row(array $data)
+    {
+        $component = trim((string) ($data['component'] ?? ''));
+        $part_number = trim((string) ($data['part_number'] ?? ''));
+        if ($part_number === '') {
+            $part_number = $component;
+        }
+        if ($part_number === '') {
+            return array('error' => 'Component atau Part Number harus diisi.');
+        }
+
+        $qty = trim((string) ($data['qty'] ?? ''));
+        if ($qty !== '' && !is_numeric($qty)) {
+            return array('error' => 'Qty harus berupa angka.');
+        }
+
+        return array('row' => array(
+            'model'                => trim((string) ($data['model'] ?? '')),
+            'suffix'               => trim((string) ($data['suffix'] ?? '')),
+            'component'            => $component,
+            'part_number'          => strip_trailing_dash00($part_number),
+            'material_description' => trim((string) ($data['material_description'] ?? '')),
+            'qty'                  => $qty === '' ? 0 : (float) $qty,
+            'uom'                  => trim((string) ($data['uom'] ?? '')),
+            // Huruf besar, sesuai tampilan kolomnya di form dan data hasil upload.
+            'shop_code'            => strtoupper($this->normalize_shop_code($data['shop_code'] ?? '')),
+            'updated_at'           => date('Y-m-d H:i:s'),
+        ));
+    }
+
+    /** Baris lain dengan kunci unik yang sama (Model+Suffix+Part Number+Shop Code). */
+    protected function row_clash(array $row, $ignore_id = null)
+    {
+        $this->db->select('id')->where(array(
+            'model'       => $row['model'],
+            'suffix'      => $row['suffix'],
+            'part_number' => $row['part_number'],
+            'shop_code'   => $row['shop_code'],
+        ));
+        if ($ignore_id !== null) {
+            $this->db->where('id !=', (int) $ignore_id);
+        }
+
+        return (bool) $this->db->get($this->table)->row_array();
+    }
+
+    /**
+     * Edit satu baris Part List dari tombol Edit di tabel. Part Number yang
+     * dikosongkan diambil dari Component (akhiran "-00" dibuang) dan Shop Code
+     * dinormalkan, sama seperti waktu upload. Satu baris tetap unik pada
+     * Model + Suffix + Part Number + Shop Code, jadi edit yang membuatnya
+     * bentrok dengan baris lain ditolak di sini (bukan dilempar sebagai error
+     * duplicate key dari database).
+     *
+     * @return array{ok:bool, message:string}
+     */
+    public function update($id, array $data)
+    {
+        $row = $this->get($id);
+        if (!$row) {
+            return array('ok' => false, 'message' => 'Baris Part List tidak ditemukan.');
+        }
+
+        $clean = $this->clean_row($data);
+        if (isset($clean['error'])) {
+            return array('ok' => false, 'message' => $clean['error']);
+        }
+        if ($this->row_clash($clean['row'], $id)) {
+            return array('ok' => false, 'message' => 'Sudah ada baris lain dengan Model + Suffix + Part Number + Shop Code yang sama.');
+        }
+
+        $this->db->where('id', (int) $id)->update($this->table, $clean['row']);
+
+        return array('ok' => true, 'message' => 'Baris Part List diperbarui.');
+    }
+
     public function delete($id)
     {
         return $this->db->where('id', $id)->delete($this->table);
@@ -306,60 +410,276 @@ class Part_list_model extends CI_Model
     }
 
     /**
-     * Stream every Part List record (optionally narrowed to one Model) as
-     * an .xlsx download.
+     * Kolom Suffix untuk unduhan: tiap pasangan (Model, Suffix) yang benar-benar
+     * ada di part_list, dikelompokkan per Model — bukan diambil dari Master BOM
+     * seperti download_template(), supaya tidak ada Qty yang kehilangan
+     * kolomnya. Satu suffix yang dipakai dua Model tetap dapat kolom sendiri di
+     * masing-masing grup, persis seperti yang dibaca parse_excel().
+     *
+     * @return array<int,array{model:string, suffixes:string[]}>
      */
-    public function export_data($model_filter = '')
+    protected function part_list_suffix_groups($model_filter = '')
     {
-        $this->db->select('model, suffix, component, part_number, material_description, qty, uom, shop_code')
+        $this->db->distinct()->select('model, suffix')
             ->from($this->table)
+            ->where('model !=', null)
+            ->where('model !=', '')
+            ->where('suffix !=', null)
+            ->where('suffix !=', '')
             ->order_by('model', 'asc')
-            ->order_by('suffix', 'asc')
-            ->order_by('component', 'asc');
+            ->order_by('suffix', 'asc');
 
         $model_filter = trim((string) $model_filter);
         if ($model_filter !== '') {
             $this->db->where('model', $model_filter);
         }
 
-        $rows = $this->db->get()->result_array();
+        $by_model = array();
+        foreach ($this->db->get()->result_array() as $row) {
+            $by_model[trim((string) $row['model'])][] = trim((string) $row['suffix']);
+        }
+
+        $groups = array();
+        foreach ($by_model as $model => $suffixes) {
+            $groups[] = array('model' => (string) $model, 'suffixes' => $suffixes);
+        }
+
+        return $groups;
+    }
+
+    /**
+     * Posisi kolom tiap (Model, Suffix) di layout pivot: "MODEL|SUFFIX" (huruf
+     * besar) => indeks kolom 0-based, dihitung setelah kolom depan (Part No,
+     * Part Name, Shop, Model).
+     */
+    protected function pivot_column_index(array $groups)
+    {
+        $index = array();
+        $col = count($this->required_headers);
+        foreach ($groups as $group) {
+            foreach ($group['suffixes'] as $suffix) {
+                $index[strtoupper($group['model'] . '|' . $suffix)] = $col;
+                $col++;
+            }
+        }
+
+        return $index;
+    }
+
+    /**
+     * Baca part_list terurut lalu susun kembali jadi baris pivot — satu baris
+     * per (Part No, Shop), dengan Qty di kolom (Model, Suffix) masing-masing.
+     * Tiap baris dikirim lewat $emit begitu selesai, bukan dikumpulkan dulu,
+     * jadi memorinya tetap rata walau datanya ratusan ribu baris.
+     *
+     * $emit menerima: array lead (Part No, Part Name, Shop), map Model yang
+     * dipakai baris itu, dan map indeks kolom => Qty.
+     */
+    protected function each_pivot_row($model_filter, array $index, $emit)
+    {
+        $sql = 'SELECT component, part_number, material_description, shop_code, model, suffix, qty FROM '
+            . $this->db->protect_identifiers($this->table);
+
+        $model_filter = trim((string) $model_filter);
+        if ($model_filter !== '') {
+            $sql .= ' WHERE model = ' . $this->db->escape($model_filter);
+        }
+        // Urutan inilah yang bikin baris pivot bisa disusun sambil jalan:
+        // semua baris untuk satu Part No + Shop pasti berurutan.
+        $sql .= ' ORDER BY component ASC, shop_code ASC, model ASC, suffix ASC';
+
+        $query = $this->db->query($sql);
+
+        $key = null;
+        $lead = array('', '', '');
+        $models = array();
+        $cells = array();
+
+        while ($row = $query->unbuffered_row('array')) {
+            $part_no = trim((string) $row['component']);
+            if ($part_no === '') {
+                $part_no = trim((string) $row['part_number']);
+            }
+            $shop = (string) $row['shop_code'];
+            $row_key = strtoupper($part_no . '|' . $shop);
+
+            if ($row_key !== $key) {
+                if ($key !== null) {
+                    $emit($lead, $models, $cells);
+                }
+                $key = $row_key;
+                $lead = array($part_no, trim((string) $row['material_description']), $shop);
+                $models = array();
+                $cells = array();
+            } elseif ($lead[1] === '') {
+                $lead[1] = trim((string) $row['material_description']);
+            }
+
+            $model = trim((string) $row['model']);
+            if ($model !== '') {
+                $models[$model] = true;
+            }
+
+            $pos = $index[strtoupper($model . '|' . trim((string) $row['suffix']))] ?? null;
+            if ($pos !== null) {
+                $cells[$pos] = rtrim(rtrim(number_format((float) $row['qty'], 3, '.', ''), '0'), '.');
+            }
+        }
+
+        if ($key !== null) {
+            $emit($lead, $models, $cells);
+        }
+
+        $query->free_result();
+    }
+
+    /**
+     * Unduh Part List sebagai CSV dengan layout yang sama dengan template
+     * upload: Part No, Part Name, Shop, Model, lalu satu kolom per Suffix yang
+     * dikelompokkan per Model (nama Model ditulis di kolom pertama grupnya,
+     * meniru sel gabungan di template — parse_excel() meneruskannya ke kanan).
+     * Hasilnya bisa diedit lalu diupload balik.
+     *
+     * Ditulis langsung ke php://output baris demi baris, jadi ratusan ribu
+     * baris pun tetap ringan dan unduhannya langsung mulai.
+     */
+    public function export_csv($model_filter = '')
+    {
+        $groups = $this->part_list_suffix_groups($model_filter);
+        $index = $this->pivot_column_index($groups);
+        $width = count($this->required_headers) + count($index);
+
+        $model_filter = trim((string) $model_filter);
+        $filename = 'part_list_'
+            . ($model_filter !== '' ? preg_replace('/[^A-Za-z0-9_-]/', '', $model_filter) . '_' : '')
+            . date('Ymd_His') . '.csv';
+
+        // Buang buffer output CI dulu, supaya tiap baris benar-benar terkirim
+        // ke browser dan tidak ditumpuk sampai selesai.
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: max-age=0');
+        header('X-Accel-Buffering: no'); // jangan di-buffer proxy/nginx
+
+        $out = fopen('php://output', 'w');
+        fwrite($out, "\xEF\xBB\xBF");  // BOM, supaya Excel membaca UTF-8 dengan benar
+        fwrite($out, "sep=,\r\n");     // petunjuk pemisah kolom untuk Excel
+
+        // Baris 1: kolom depan, lalu nama Model di kolom pertama tiap grup.
+        // Baris 2: kode Suffix di bawah masing-masing kolomnya.
+        $row1 = $this->required_headers;
+        $row2 = array_fill(0, count($this->required_headers), '');
+        foreach ($groups as $group) {
+            foreach ($group['suffixes'] as $i => $suffix) {
+                $row1[] = $i === 0 ? $group['model'] : '';
+                $row2[] = $suffix;
+            }
+        }
+        fputcsv($out, $row1);
+        fputcsv($out, $row2);
+
+        $written = 0;
+        $this->each_pivot_row($model_filter, $index, function ($lead, $models, $cells) use ($out, $width, &$written) {
+            $line = array_fill(0, $width, '');
+            $line[0] = $lead[0];
+            $line[1] = $lead[1];
+            $line[2] = $lead[2];
+            $line[3] = implode('&', array_keys($models)); // ringkasan Model, seperti di file aslinya
+            foreach ($cells as $pos => $qty) {
+                $line[$pos] = $qty;
+            }
+            fputcsv($out, $line);
+
+            $written++;
+            if (($written % 1000) === 0) {
+                flush();
+            }
+        });
+
+        fclose($out);
+        exit;
+    }
+
+    /**
+     * Unduhan yang sama dalam bentuk .xlsx — layout dan isinya persis seperti
+     * export_csv(), plus sel gabungan per Model dan Part No dikunci sebagai
+     * teks. Hanya sel yang benar-benar terisi yang ditulis, jadi jauh lebih
+     * ringan daripada versi memanjang yang lama (satu baris per Model+Suffix).
+     */
+    public function export_data($model_filter = '')
+    {
+        $current = $this->to_bytes(ini_get('memory_limit'));
+        if ($current !== -1 && $current < 1024 * 1024 * 1024) {
+            @ini_set('memory_limit', '1024M');
+        }
+
+        $groups = $this->part_list_suffix_groups($model_filter);
+        $index = $this->pivot_column_index($groups);
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Part List');
 
-        $headers = array('No', 'Model', 'Suffix', 'Component', 'Part Number', 'Material Description', 'Qty', 'Uom', 'Shop Code');
-        $sheet->fromArray($headers, null, 'A1');
-        $sheet->getStyle('A1:I1')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle('A1:I1')->getFill()
+        foreach (array_combine(range('A', 'D'), $this->required_headers) as $col => $label) {
+            $sheet->setCellValue("{$col}1", $label);
+            $sheet->mergeCells("{$col}1:{$col}2");
+        }
+
+        $colIndex = count($this->required_headers);
+        foreach ($groups as $group) {
+            $startCol = $this->column_letter($colIndex);
+            $sheet->setCellValue("{$startCol}1", $group['model']);
+            foreach ($group['suffixes'] as $suffix) {
+                $sheet->setCellValueExplicit($this->column_letter($colIndex) . '2', $suffix, DataType::TYPE_STRING);
+                $colIndex++;
+            }
+            $endCol = $this->column_letter($colIndex - 1);
+            if ($endCol !== $startCol) {
+                $sheet->mergeCells("{$startCol}1:{$endCol}1");
+            }
+        }
+        $lastCol = $this->column_letter(max($colIndex - 1, count($this->required_headers) - 1));
+
+        $sheet->getStyle("A1:{$lastCol}2")->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle("A1:{$lastCol}2")->getFill()
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('1F6FEB');
+        $sheet->getStyle("A1:{$lastCol}2")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
-        // Component (D) and Part Number (E) hold codes like "9004A-11336-00".
-        foreach (array('D', 'E') as $col) {
-            $sheet->getStyle("{$col}1:{$col}1048576")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
-        }
+        // Part No memuat kode seperti 9004A-11336-00 — dikunci sebagai teks
+        // supaya Excel tidak mengubahnya jadi notasi ilmiah.
+        $sheet->getStyle('A1:A1048576')->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
 
-        $r = 2;
-        foreach ($rows as $i => $row) {
-            $sheet->setCellValueExplicit("A{$r}", $i + 1, DataType::TYPE_NUMERIC);
-            $sheet->fromArray(array($row['model'], $row['suffix']), null, "B{$r}");
-            $sheet->setCellValueExplicit("D{$r}", $row['component'], DataType::TYPE_STRING);
-            $sheet->setCellValueExplicit("E{$r}", $row['part_number'], DataType::TYPE_STRING);
-            $sheet->fromArray(array(
-                $row['material_description'],
-                rtrim(rtrim(number_format((float) $row['qty'], 3, '.', ''), '0'), '.'),
-                $row['uom'],
-                $row['shop_code'],
-            ), null, "F{$r}");
+        $r = 3; // baris 1-2 header
+        $this->each_pivot_row($model_filter, $index, function ($lead, $models, $cells) use ($sheet, &$r) {
+            $sheet->setCellValueExplicit('A' . $r, $lead[0], DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('B' . $r, $lead[1], DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('C' . $r, $lead[2], DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit('D' . $r, implode('&', array_keys($models)), DataType::TYPE_STRING);
+            foreach ($cells as $pos => $qty) {
+                $sheet->setCellValue($this->column_letter($pos) . $r, (float) $qty);
+            }
             $r++;
-        }
+        });
 
-        foreach (range('A', 'I') as $col) {
+        foreach (range('A', 'D') as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
+        // Autosize tiap kolom suffix terlalu lambat kalau jumlahnya ratusan
+        // (lihat download_template()) — lebar tetap sudah cukup untuk kode 2-3 huruf.
+        for ($i = count($this->required_headers); $i < $colIndex; $i++) {
+            $sheet->getColumnDimension($this->column_letter($i))->setWidth(6);
+        }
+        $sheet->freezePane('E3');
 
-        $filename = 'part_list_data_' . date('Ymd_His') . '.xlsx';
+        $model_filter = trim((string) $model_filter);
+        $filename = 'part_list_'
+            . ($model_filter !== '' ? preg_replace('/[^A-Za-z0-9_-]/', '', $model_filter) . '_' : '')
+            . date('Ymd_His') . '.xlsx';
 
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         header('Content-Disposition: attachment; filename="' . $filename . '"');

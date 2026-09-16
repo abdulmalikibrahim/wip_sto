@@ -116,6 +116,7 @@ $units_text = function ($card) use ($stages, $label_of) {
                             <?php endforeach; ?>
                         <th class="text-center col-group-start">Summary <?= html_escape($label_of($card)) ?></th>
                         <th><?= html_escape($label_of($card)) ?> Cutoff VIN</th>
+                        <th class="text-center" title="Urutan VIN cutoff itu di daftar WIP shop sendiri (Sequence / total unit)">Seq</th>
                         <?php endforeach; ?>
                         <?php // The Total card's group: every card's value, then their sum. ?>
                         <?php foreach ($stages as $card => $units): ?>

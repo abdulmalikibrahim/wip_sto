@@ -42,7 +42,7 @@ $flow_steps = array(
         'tag'   => 'Batas hitung',
         'lead'  => 'VIN pertama yang mulai dihitung, per part di tiap shop.',
         'rules' => array(
-            'Dihitung: unit <strong>Cutoff VIN &rarr; unit terbaru</strong>. Unit yang lebih lama diabaikan.',
+            'Dihitung: unit dari <strong>Cutoff VIN sampai Sequence tertinggi</strong>. Sequence di bawah cutoff diabaikan.',
             'Belum ada cutoff = <strong>Net 0</strong>.',
             'Isi per part, sekaligus satu shop, atau <strong>Upload Excel</strong>. VIN harus ada di Data WIP.',
         ),
@@ -181,16 +181,14 @@ $flow_rules = array(
         <div class="card h-100 flow-anim">
             <div class="card-header"><i class="bi bi-flag-fill me-1"></i> Cara Hitung Net</div>
             <div class="card-body">
-                <p class="small text-secondary mb-3">Unit masuk dari kiri. Yang dihitung: <strong class="text-success">Cutoff VIN sampai unit terbaru</strong>.</p>
+                <p class="small text-secondary mb-3">Unit diurutkan <strong>by Sequence</strong> (angka di bawah tiap unit): Sequence terbesar di kiri, makin ke kanan makin kecil &mdash; sama seperti daftar Master WIP yang menampilkan Sequence terbesar di atas. Yang dihitung: <strong class="text-success">unit Cutoff VIN sampai Sequence tertinggi</strong>; Sequence di bawah Cutoff VIN tidak dihitung.</p>
                 <div class="conveyor" aria-hidden="true">
-                    <div class="conveyor-end"><i class="bi bi-box-arrow-in-right"></i>Masuk</div>
                     <div class="conveyor-belt"><div class="conveyor-units" id="conveyorUnits"></div></div>
-                    <div class="conveyor-end"><i class="bi bi-box-arrow-right"></i>Keluar</div>
                 </div>
                 <div class="conveyor-legend small">
                     <span><i class="lg lg-new"></i>Dihitung</span>
                     <span><i class="lg lg-cut"></i>Cutoff VIN</span>
-                    <span><i class="lg lg-old"></i>Lebih lama (diabaikan)</span>
+                    <span>Angka = Sequence</span>
                 </div>
                 <div class="formula-box">
                     <div class="formula-line">

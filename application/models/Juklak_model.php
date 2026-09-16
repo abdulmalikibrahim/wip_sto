@@ -58,6 +58,160 @@ class Juklak_model extends CI_Model
         return $rows;
     }
 
+    /** Daftar kode Suffix yang dikenal Master BOM / Part List, untuk saran di form. */
+    public function suffixes()
+    {
+        return $this->suffix_columns();
+    }
+
+    /**
+     * Ubah pasangan array Suffix[] / Qty[] dari form jadi map {SUFFIX: qty}.
+     * Baris dengan Suffix atau Qty kosong diabaikan, dan Qty 0 tidak disimpan —
+     * sama seperti aturan waktu upload.
+     *
+     * @return array|false false kalau ada Qty yang bukan angka
+     */
+    public function parse_suffix_qty($suffixes, $qtys)
+    {
+        $map = array();
+        foreach ((array) $suffixes as $i => $suffix) {
+            $suffix = strtoupper(trim((string) $suffix));
+            $qty = trim((string) (is_array($qtys) && isset($qtys[$i]) ? $qtys[$i] : ''));
+            if ($suffix === '' || $qty === '') {
+                continue;
+            }
+            if (!is_numeric($qty)) {
+                return false;
+            }
+            if ((float) $qty != 0.0) {
+                $map[$suffix] = (float) $qty;
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * Tambah satu baris Juklak dari tombol "Tambah Manual" / "Copy".
+     * Identitasnya (plant, part_number), jadi pasangan yang sudah ada ditolak.
+     *
+     * @return array{ok:bool, message:string}
+     */
+    public function create($plant, $part_no_raw, $part_name, $main_no_raw, $suffixes, $qtys, $user_id)
+    {
+        if (!$this->table_ready()) {
+            return array('ok' => false, 'message' => 'Tabel juklak belum ada.');
+        }
+        if (!in_array($plant, $this->plants, true)) {
+            return array('ok' => false, 'message' => 'Plant harus KAP1 atau KAP2.');
+        }
+
+        $part_no = trim((string) $part_no_raw);
+        if ($part_no === '') {
+            return array('ok' => false, 'message' => 'Part No wajib diisi.');
+        }
+
+        $main_no = trim((string) $main_no_raw);
+        if ($main_no === '') {
+            $main_no = $part_no;
+        }
+        $part_number = strip_trailing_dash00($part_no);
+
+        $qty_map = $this->parse_suffix_qty($suffixes, $qtys);
+        if ($qty_map === false) {
+            return array('ok' => false, 'message' => 'Qty per Suffix harus berupa angka.');
+        }
+
+        $existing = $this->db->select('id')
+            ->where(array('plant' => $plant, 'part_number' => $part_number))
+            ->get($this->table)->row_array();
+        if ($existing) {
+            return array('ok' => false, 'message' => 'Plant + Part No ini sudah ada di Juklak — pakai tombol Edit pada barisnya.');
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $this->db->insert($this->table, array(
+            'plant'            => $plant,
+            'part_no'          => $part_no,
+            'part_name'        => trim((string) $part_name),
+            'part_number'      => $part_number,
+            'main_part_no'     => $main_no,
+            'main_part_number' => strip_trailing_dash00($main_no),
+            'suffix_qty'       => json_encode($qty_map, JSON_FORCE_OBJECT),
+            'user_id'          => $user_id,
+            'created_at'       => $now,
+            'updated_at'       => $now,
+        ));
+
+        return array('ok' => true, 'message' => 'Baris Juklak ditambahkan.');
+    }
+
+    /**
+     * Edit satu baris Juklak dari tombol Edit di tabel. Identitas baris tetap
+     * (plant, part_number) — mengubahnya jadi pasangan yang sudah dipakai baris
+     * lain ditolak, bukan bikin duplikat.
+     *
+     * $suffixes null berarti Qty per Suffix tidak ikut diubah (mis. dipanggil
+     * dari form lama); array kosong berarti semuanya dikosongkan.
+     *
+     * @return array{ok:bool, message:string}
+     */
+    public function update($id, $plant, $part_no_raw, $part_name, $main_no_raw, $suffixes = null, $qtys = null)
+    {
+        if (!$this->table_ready()) {
+            return array('ok' => false, 'message' => 'Tabel juklak belum ada.');
+        }
+
+        $row = $this->db->where('id', (int) $id)->get($this->table)->row_array();
+        if (!$row) {
+            return array('ok' => false, 'message' => 'Baris Juklak tidak ditemukan.');
+        }
+        if (!in_array($plant, $this->plants, true)) {
+            return array('ok' => false, 'message' => 'Plant harus KAP1 atau KAP2.');
+        }
+
+        $part_no = trim((string) $part_no_raw);
+        if ($part_no === '') {
+            return array('ok' => false, 'message' => 'Part No wajib diisi.');
+        }
+
+        $main_no = trim((string) $main_no_raw);
+        if ($main_no === '') {
+            $main_no = $part_no; // kosong = part-nya main sendiri, sama seperti upload
+        }
+        $part_number = strip_trailing_dash00($part_no);
+
+        $clash = $this->db->select('id')
+            ->where(array('plant' => $plant, 'part_number' => $part_number))
+            ->where('id !=', (int) $id)
+            ->get($this->table)->row_array();
+        if ($clash) {
+            return array('ok' => false, 'message' => 'Plant + Part No ini sudah dipakai baris Juklak lain.');
+        }
+
+        $data = array(
+            'plant'            => $plant,
+            'part_no'          => $part_no,
+            'part_name'        => trim((string) $part_name),
+            'part_number'      => $part_number,
+            'main_part_no'     => $main_no,
+            'main_part_number' => strip_trailing_dash00($main_no),
+            'updated_at'       => date('Y-m-d H:i:s'),
+        );
+
+        if ($suffixes !== null) {
+            $qty_map = $this->parse_suffix_qty($suffixes, $qtys);
+            if ($qty_map === false) {
+                return array('ok' => false, 'message' => 'Qty per Suffix harus berupa angka.');
+            }
+            $data['suffix_qty'] = json_encode($qty_map, JSON_FORCE_OBJECT);
+        }
+
+        $this->db->where('id', (int) $id)->update($this->table, $data);
+
+        return array('ok' => true, 'message' => 'Baris Juklak diperbarui.');
+    }
+
     public function delete($id)
     {
         return $this->db->where('id', (int) $id)->delete($this->table);

@@ -6,6 +6,7 @@
     var currentCard = 'all';
     var currentScope = 'all';
     var currentStatus = '';
+    var currentDecision = '';
     var allRows = [];
     var requestSeq = 0;
 
@@ -55,6 +56,40 @@
             (row.vin_state === 'stale' ? '<div class="small text-secondary mt-1">' + esc(row.cutoff_vin) + '</div>' : '');
     }
 
+    // Keputusan per part per line: "Tidak dihitung" membuat part-nya 0 di WIP
+    // Calc & Summary beserta alasannya; "Dihitung" hanya penanda triase.
+    var DECISION = {
+        counted: { text: 'Dihitung', cls: 'text-bg-success' },
+        excluded: { text: 'Tidak dihitung', cls: 'text-bg-dark' }
+    };
+
+    // Status = keputusannya saja; alasannya dibaca lewat tombol Detail.
+    function statusCell(row) {
+        var d = DECISION[row.decision];
+        if (!d) return '<span class="badge text-bg-secondary">Belum diputuskan</span>';
+
+        return '<span class="badge ' + d.cls + '" title="' +
+            (row.decision === 'excluded' ? 'Dihitung 0 di WIP Calc &amp; Summary — klik Detail untuk alasannya' : 'Tetap dihitung seperti biasa') +
+            '">' + esc(d.text) + '</span>';
+    }
+
+    function actionCell(row) {
+        if (!WIP_MISSING_CAN_DECIDE) return '<span class="text-secondary">—</span>';
+
+        var attrs = 'data-plant="' + esc(row.source.toLowerCase()) + '" data-part-number="' + esc(row.part_number) + '"';
+
+        return '<div class="btn-group btn-group-sm">' +
+            '<button type="button" class="btn btn-outline-success btn-decide" data-decision="counted" ' + attrs +
+                ' title="Tandai tetap dihitung"><i class="bi bi-check-lg"></i></button>' +
+            '<button type="button" class="btn btn-outline-warning btn-decide" data-decision="excluded" ' + attrs +
+                ' title="Tandai tidak dihitung + alasan"><i class="bi bi-slash-circle"></i></button>' +
+            (row.decision
+                ? '<button type="button" class="btn btn-outline-secondary btn-decide-clear" ' + attrs +
+                    ' title="Hapus keputusan"><i class="bi bi-arrow-counterclockwise"></i></button>'
+                : '') +
+            '</div>';
+    }
+
     var columns = [
         { data: null, defaultContent: '', orderable: false, searchable: false },
         {
@@ -83,6 +118,24 @@
         qtyColumn('v_toso'),
         qtyColumn('v_assy'),
         qtyColumn('summary', 'text-center fw-semibold col-group-start'),
+        {
+            data: 'decision',
+            className: 'text-center',
+            render: function (value, type, row) {
+                if (type === 'display') return statusCell(row);
+                // Alasannya ikut dicari/diurutkan walau hanya tampil di modal Detail.
+                return (DECISION[value] ? DECISION[value].text : 'Belum diputuskan') + ' ' + (row.reason || '');
+            }
+        },
+        {
+            data: null,
+            orderable: false,
+            searchable: false,
+            className: 'text-center',
+            render: function (value, type, row) {
+                return type === 'display' ? actionCell(row) : '';
+            }
+        },
         {
             data: null,
             orderable: false,
@@ -114,6 +167,8 @@
 
     function rowVisible(row, ignoreCard) {
         if (currentStatus && row.vin_state !== currentStatus) return false;
+        if (currentDecision === 'undecided' && row.decision !== null) return false;
+        if (currentDecision && currentDecision !== 'undecided' && row.decision !== currentDecision) return false;
         return ignoreCard || currentCard === 'all' || row.card === currentCard;
     }
 
@@ -149,7 +204,8 @@
     function updateExportHref() {
         var query = 'scope=' + encodeURIComponent(currentScope) +
             '&card=' + encodeURIComponent(currentCard === 'all' ? '' : currentCard) +
-            '&status=' + encodeURIComponent(currentStatus);
+            '&status=' + encodeURIComponent(currentStatus) +
+            '&decision=' + encodeURIComponent(currentDecision);
         $btnExport.attr('href', CalcBasis.url(BASE_URL + 'wip/summary/missing-cutoff/export?' + query));
     }
 
@@ -183,6 +239,89 @@
         paintCards();
         table.draw();
         updateExportHref();
+    });
+
+    $('#missingDecisionFilter').on('change', function () {
+        currentDecision = $(this).val();
+        paintCards();
+        table.draw();
+        updateExportHref();
+    });
+
+    // ---- Keputusan: dihitung / tidak dihitung (+ alasan) / hapus keputusan ----
+    function afterDecision(resp) {
+        if (resp.status !== 'success') {
+            toast('error', resp.message || 'Gagal menyimpan keputusan.');
+            return false;
+        }
+        toast('success', resp.message || 'Keputusan tersimpan.');
+        load(); // angkanya ikut berubah, jadi datanya dimuat ulang
+        return true;
+    }
+
+    function decisionFailed(xhr) {
+        toast('error', (xhr.responseJSON && xhr.responseJSON.message) || 'Gagal menghubungi server.');
+    }
+
+    $(document).on('click', '#tblMissingCutoff .btn-decide', function () {
+        var $btn = $(this);
+        var plant = $btn.attr('data-plant');
+        var part = $btn.attr('data-part-number');
+
+        if ($btn.attr('data-decision') === 'counted') {
+            $.post(BASE_URL + 'wip/summary/missing-cutoff/decide', {
+                plant: plant, part_number: part, decision: 'counted', reason: ''
+            }, null, 'json').done(afterDecision).fail(decisionFailed);
+            return;
+        }
+
+        $('#missingReasonAlert').addClass('d-none').text('');
+        $('#missingReasonPlant').val(plant);
+        $('#missingReasonPart').val(part);
+        $('#missingReasonLine').text(plant.toUpperCase());
+        $('#missingReasonPartLabel').text(part);
+        $('#missingReasonText').val('');
+        bootstrap.Modal.getOrCreateInstance('#modalMissingReason').show();
+    });
+
+    $('#formMissingReason').on('submit', function (e) {
+        e.preventDefault();
+        var reason = $.trim($('#missingReasonText').val());
+        if (!reason) {
+            $('#missingReasonAlert').removeClass('d-none').text('Alasan wajib diisi.');
+            return;
+        }
+
+        var $btn = $('#btnSaveMissingReason').prop('disabled', true);
+        $.post(BASE_URL + 'wip/summary/missing-cutoff/decide', {
+            plant: $('#missingReasonPlant').val(),
+            part_number: $('#missingReasonPart').val(),
+            decision: 'excluded',
+            reason: reason
+        }, null, 'json')
+            .done(function (resp) {
+                if (resp.status !== 'success') {
+                    $('#missingReasonAlert').removeClass('d-none').text(resp.message || 'Gagal menyimpan.');
+                    return;
+                }
+                bootstrap.Modal.getOrCreateInstance('#modalMissingReason').hide();
+                afterDecision(resp);
+            })
+            .fail(function (xhr) {
+                $('#missingReasonAlert').removeClass('d-none')
+                    .text((xhr.responseJSON && xhr.responseJSON.message) || 'Gagal menghubungi server.');
+            })
+            .always(function () {
+                $btn.prop('disabled', false);
+            });
+    });
+
+    $(document).on('click', '#tblMissingCutoff .btn-decide-clear', function () {
+        var $btn = $(this);
+        $.post(BASE_URL + 'wip/summary/missing-cutoff/decide/clear', {
+            plant: $btn.attr('data-plant'),
+            part_number: $btn.attr('data-part-number')
+        }, null, 'json').done(afterDecision).fail(decisionFailed);
     });
 
     function load() {
@@ -290,6 +429,22 @@
             }).join('') +
             '<td class="text-end text-success">' + esc(formatTotal(resp.grand_total)) + '</td></tr>';
 
+        var d = DECISION[resp.decision];
+        var statusText = d
+            ? '<span class="badge ' + d.cls + '">' + esc(d.text) + '</span>'
+            : '<span class="badge text-bg-secondary">Belum diputuskan</span>';
+
+        // Alasan "tidak dihitung" dibaca di sini, bukan di tabel.
+        var reasonBlock = '';
+        if (resp.decision === 'excluded') {
+            reasonBlock = '<div class="alert alert-dark py-2 px-3 small mb-3"><i class="bi bi-slash-circle me-1"></i>' +
+                '<strong>Alasan tidak dihitung:</strong> ' + esc(resp.reason) +
+                '<div class="text-secondary mt-1">Part ini dihitung <strong>0</strong> di WIP Calc &amp; WIP Summary untuk ' +
+                esc(resp.source.toUpperCase()) + '. Angka di bawah adalah hitungan seandainya tetap dihitung.</div></div>';
+        } else if (resp.reason) {
+            reasonBlock = '<div class="small text-secondary mb-3">Catatan: ' + esc(resp.reason) + '</div>';
+        }
+
         $modalBody.html(
             '<dl class="row mb-3 small">' +
                 fieldRow('Line', esc(resp.source.toUpperCase())) +
@@ -297,8 +452,10 @@
                 fieldRow('Part Number', esc(resp.part_number)) +
                 fieldRow('Material Description', esc(resp.material_description)) +
                 fieldRow('Shop Code', esc(resp.shop_code)) +
+                fieldRow('Status', statusText) +
                 fieldRow('Cutoff VIN ' + label(own), vinText) +
             '</dl>' +
+            reasonBlock +
             '<div class="alert alert-warning py-2 px-3 small mb-3"><i class="bi bi-lightbulb me-1"></i>' + explain + '</div>' +
             '<div class="text-secondary small mb-2">Angka per shop = jumlah unit yang Model + Suffix-nya cocok. ' +
                 '<span class="text-danger fw-semibold">Merah</span> / abu-abu = dihitung / total unit yang ada, kalau berbeda.</div>' +

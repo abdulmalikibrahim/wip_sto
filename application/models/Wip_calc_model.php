@@ -1,6 +1,7 @@
 <?php
 defined('BASEPATH') OR exit('No direct script access allowed');
 
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -36,6 +37,9 @@ class Wip_calc_model extends CI_Model
 
     /** @var array<string,array> per-(shop|boundary) unit-count cache within one calc() call */
     protected $counts_cache = array();
+
+    /** @var array<string,array> per-(source|unit shop) VIN index, see unit_index() */
+    protected $unit_index_cache = array();
 
     public function __construct()
     {
@@ -119,6 +123,101 @@ class Wip_calc_model extends CI_Model
         return $this->juklak_cache[$source] = $map;
     }
 
+    /** @var array<string,array> source => part_decisions() result, memoized per request */
+    protected $decision_cache = array();
+
+    /**
+     * Keputusan per part dari menu "Summary Tanpa Cutoff" (tabel
+     * wip_part_decision), keyed by upper-cased part_number:
+     * array{decision: 'counted'|'excluded', reason: string}.
+     *
+     * Empty when the table hasn't been created yet.
+     *
+     * @return array<string,array>
+     */
+    public function part_decisions($source)
+    {
+        if (isset($this->decision_cache[$source])) {
+            return $this->decision_cache[$source];
+        }
+
+        $map = array();
+        if ($this->db->table_exists('wip_part_decision')) {
+            $rows = $this->db->select('part_number, decision, reason')
+                ->where('plant', $source)
+                ->get('wip_part_decision')->result_array();
+            foreach ($rows as $row) {
+                $part = strtoupper(trim((string) $row['part_number']));
+                if ($part !== '') {
+                    $map[$part] = array('decision' => $row['decision'], 'reason' => (string) $row['reason']);
+                }
+            }
+        }
+
+        return $this->decision_cache[$source] = $map;
+    }
+
+    /**
+     * Parts marked "tidak dihitung" on this line: counted as 0 everywhere in
+     * WIP Calc / WIP Summary, exactly like a Juklak part, with the reason the
+     * user gave shown alongside. Keyed by upper-cased part_number.
+     *
+     * @return array<string,string> part => reason
+     */
+    public function excluded_parts($source)
+    {
+        $excluded = array();
+        foreach ($this->part_decisions($source) as $part => $decision) {
+            if ($decision['decision'] === 'excluded') {
+                $excluded[$part] = $decision['reason'];
+            }
+        }
+
+        return $excluded;
+    }
+
+    /** @var array<string,array> source => special_shops() result, memoized per request */
+    protected $special_cache = array();
+
+    /**
+     * "Part Special" rules for this KAP line: the shops a part is counted in,
+     * set by hand in the Part Special menu instead of being read from the
+     * basis row's Shop Code (see Special_part_model).
+     *
+     * Keyed by upper-cased part_number, valued by the shop keys in line order
+     * (wos, weld, toso, assy). The FIRST shop is where the part is installed —
+     * counted Net from that shop's cutoff VIN, exactly as an ordinary part;
+     * the shops after it count every unit; shops absent from the list count 0.
+     * Empty when the table hasn't been created yet.
+     *
+     * @return array<string,string[]>
+     */
+    public function special_shops($source)
+    {
+        if (isset($this->special_cache[$source])) {
+            return $this->special_cache[$source];
+        }
+
+        $map = array();
+        if ($this->db->table_exists('wip_special_part')) {
+            $order = array_keys((array) ($this->config->item('wip_calc_shop_codes')[$source] ?? array()));
+            $rows = $this->db->select('part_number, shops')
+                ->where('plant', $source)
+                ->get('wip_special_part')->result_array();
+            foreach ($rows as $row) {
+                $part = strtoupper(trim((string) $row['part_number']));
+                // array_intersect keeps $order's order, so the first shop is
+                // always the earliest one on the line whatever order it was saved in.
+                $shops = array_values(array_intersect($order, array_filter(array_map('trim', explode(',', (string) $row['shops'])))));
+                if ($part !== '' && $shops) {
+                    $map[$part] = $shops;
+                }
+            }
+        }
+
+        return $this->special_cache[$source] = $map;
+    }
+
     /**
      * Sum BOM part usage (grouped by part_number) per shop, each part's
      * contribution counted from its own cutoff VIN (or every cached unit,
@@ -184,11 +283,16 @@ class Wip_calc_model extends CI_Model
                     'shop_code_set'        => array(), // collapsed into 'shop_code' below, once all rows are seen
                     'model_set'            => array(), // Models the part is used in -> 'models' / 'model_count' below
                     'juklak_main'          => null,
+                    'excluded_reason'      => null, // "tidak dihitung" decision -> counted 0, with its reason
+                    'special_shops'        => null, // Part Special rule, as "Welding + Toso" (null = ordinary part)
+                    'special_start'        => null, // …and the shop of it that counts from its cutoff VIN
                 );
                 foreach (array_keys($shop_codes) as $s) {
                     $acc[$part_number][$s] = 0.0;
                     $acc[$part_number][$s . '_gross'] = 0.0;
                     $acc[$part_number][$s . '_vin'] = null;
+                    $acc[$part_number][$s . '_vin_seq'] = null;   // that VIN's SEQUENCE in the shop's WIP list
+                    $acc[$part_number][$s . '_vin_total'] = null; // …out of how many cached units
                 }
             }
 
@@ -211,32 +315,64 @@ class Wip_calc_model extends CI_Model
                 continue;
             }
 
+            // Ditandai "tidak dihitung" di menu Summary Tanpa Cutoff — listed
+            // with its reason, but counted 0 in every shop.
+            $excluded_reason = $this->excluded_parts($source)[$part_key] ?? null;
+            if ($excluded_reason !== null) {
+                $acc[$part_number]['excluded_reason'] = $excluded_reason;
+                continue;
+            }
+
             // A row's Shop Code cell can name more than one shop; credit every
             // configured shop it lists instead of assuming a single shop per row.
             $row_shops = array_map('strtoupper', array_filter(array_map('trim', explode(',', (string) $row['shop_code']))));
 
+            // A Part Special rule replaces that Shop Code entirely: the part is
+            // counted only in the shops the rule lists — its first shop from
+            // that shop's cutoff VIN, the rest in full (see special_shops()).
+            $special = $this->special_shops($source)[$part_key] ?? null;
+            if ($special !== null) {
+                $shop_labels_all = (array) $this->config->item('wip_shop_labels');
+                $acc[$part_number]['special_shops'] = implode(' + ', array_map(function ($s) use ($shop_labels_all) {
+                    return $shop_labels_all[$s] ?? strtoupper($s);
+                }, $special));
+                $acc[$part_number]['special_start'] = $shop_labels_all[$special[0]] ?? strtoupper($special[0]);
+            }
+
             foreach ($shop_codes as $shop => $shop_code) {
                 $shop_code_norm = strtoupper($shop_code);
-                if (!in_array($shop_code_norm, $row_shops, true)) {
+                if ($special !== null) {
+                    if (!in_array($shop, $special, true)) {
+                        continue; // shop left out of the rule -> not counted at all
+                    }
+                } elseif (!in_array($shop_code_norm, $row_shops, true)) {
                     continue;
                 }
 
+                // Every shop of the rule after its first one carries the part
+                // already, so all of its units count — no cutoff VIN involved.
+                $all_units = $special !== null && $shop !== $special[0];
+
                 $seen_key = $shop . '|' . $part_key;
-                if (!isset($seen_part_per_shop[$seen_key])) {
+                if (!$all_units && !isset($seen_part_per_shop[$seen_key])) {
                     $seen_part_per_shop[$seen_key] = true;
                     $parts_total[$shop]++;
                 }
 
-                $cutoff = $cutoff_index[$shop_code_norm . '|' . $part_key] ?? null;
+                $cutoff = $all_units ? null : ($cutoff_index[$shop_code_norm . '|' . $part_key] ?? null);
                 $boundary = null;
                 if ($cutoff !== null) {
-                    $found = $this->db->select('id')
-                        ->where(array('source' => $source, 'shop' => $shop, 'vin' => $cutoff['vin']))
-                        ->get('wip_data')->row_array();
+                    // Where this VIN sits in the shop's cached list: its id (the
+                    // counting boundary) and its SEQUENCE (reported alongside the
+                    // VIN, so the number can be traced back to the WIP list).
+                    $unit_index = $this->unit_index($source, $shop);
+                    $cutoff_key = strtoupper(trim($cutoff['vin']));
 
-                    if ($found) {
-                        $boundary = (int) $found['id'];
+                    if (isset($unit_index['ids'][$cutoff_key])) {
+                        $boundary = $unit_index['ids'][$cutoff_key];
                         $acc[$part_number][$shop . '_vin'] = $cutoff['vin'];
+                        $acc[$part_number][$shop . '_vin_seq'] = $unit_index['seq'][$cutoff_key];
+                        $acc[$part_number][$shop . '_vin_total'] = $unit_index['total'];
                         if (!isset($seen_part_per_shop[$seen_key . '#counted'])) {
                             $seen_part_per_shop[$seen_key . '#counted'] = true;
                             $parts_with_cutoff[$shop]++;
@@ -256,7 +392,10 @@ class Wip_calc_model extends CI_Model
                 // yet -> 0, nothing is counted until one is; a stale cutoff
                 // (VIN no longer cached, $boundary null) still counts every unit.
                 $unit_count = 0;
-                if ($cutoff !== null) {
+                if ($all_units) {
+                    $counts = $this->get_counts($source, $shop, null); // Part Special: every unit of this shop
+                    $unit_count = $counts[$key] ?? 0;
+                } elseif ($cutoff !== null) {
                     $counts = $this->get_counts($source, $shop, $boundary);
                     $unit_count = $counts[$key] ?? 0;
                 }
@@ -381,7 +520,6 @@ class Wip_calc_model extends CI_Model
         $bom_rows = $this->db->order_by('part_number', 'asc')->order_by('id', 'asc')->get()->result_array();
 
         $data = array();
-        $total_wip_cache = array(); // shop -> total cached WIP units, regardless of model/suffix
 
         foreach ($bom_rows as $row) {
             $part_number = $row['part_number'] !== '' ? $row['part_number'] : $row['material'];
@@ -409,31 +547,21 @@ class Wip_calc_model extends CI_Model
                 $total_wip = null;
 
                 if ($cutoff !== null) {
-                    $found = $this->db->select('id')
-                        ->where(array('source' => $source, 'shop' => $shop, 'vin' => $cutoff['vin']))
-                        ->get('wip_data')->row_array();
+                    $unit_index = $this->unit_index($source, $shop);
+                    $cutoff_key = strtoupper(trim($cutoff['vin']));
                     $cutoff_vin = $cutoff['vin'];
-                    $cutoff_status = $found ? 'used' : 'stale';
+                    $cutoff_status = isset($unit_index['ids'][$cutoff_key]) ? 'used' : 'stale';
+                    $total_wip = $unit_index['total'];
 
-                    if (!isset($total_wip_cache[$shop])) {
-                        $total_wip_cache[$shop] = $this->db
-                            ->where(array('source' => $source, 'shop' => $shop))
-                            ->count_all_results('wip_data');
-                    }
-                    $total_wip = $total_wip_cache[$shop];
-
-                    if ($found) {
-                        $boundary = (int) $found['id'];
+                    if ($cutoff_status === 'used') {
+                        $boundary = $unit_index['ids'][$cutoff_key];
                         // Position among every unit of this shop (not just ones
                         // matching this row's model/suffix) — "unit 131 of 200".
                         // Counted in list order (oldest id first) so it matches
-                        // the "No" column of the WIP data list the cutoff was
+                        // the Sequence column of the WIP data list the cutoff was
                         // picked from; get_counts() then sums this row and every
-                        // one after it, i.e. No 131..200 in that example.
-                        $cutoff_position = (int) $this->db
-                            ->where(array('source' => $source, 'shop' => $shop))
-                            ->where('id <=', $boundary)
-                            ->count_all_results('wip_data');
+                        // one after it, i.e. seq 131..200 in that example.
+                        $cutoff_position = $unit_index['seq'][$cutoff_key];
                     }
                 }
 
@@ -508,9 +636,8 @@ class Wip_calc_model extends CI_Model
             return array('ok' => false, 'message' => 'Part Number is required.');
         }
 
-        $total_wip = (int) $this->db
-            ->where(array('source' => $source, 'shop' => $shop))
-            ->count_all_results('wip_data');
+        $unit_index = $this->unit_index($source, $shop);
+        $total_wip = $unit_index['total'];
 
         $cutoff = $this->db
             ->where(array('shop_code' => $shop_code, 'part_number' => $part_number))
@@ -519,17 +646,12 @@ class Wip_calc_model extends CI_Model
         $boundary = null;
         $cutoff_info = null;
         if ($cutoff) {
-            $found = $this->db->select('id')
-                ->where(array('source' => $source, 'shop' => $shop, 'vin' => $cutoff['vin']))
-                ->get('wip_data')->row_array();
+            $cutoff_key = strtoupper(trim($cutoff['vin']));
 
-            if ($found) {
-                $boundary = (int) $found['id'];
-                // Same "No"-aligned position as calc_detail() — see the note there.
-                $position = (int) $this->db
-                    ->where(array('source' => $source, 'shop' => $shop))
-                    ->where('id <=', $boundary)
-                    ->count_all_results('wip_data');
+            if (isset($unit_index['ids'][$cutoff_key])) {
+                $boundary = $unit_index['ids'][$cutoff_key];
+                // Same Sequence-aligned position as calc_detail() — see the note there.
+                $position = $unit_index['seq'][$cutoff_key];
                 $cutoff_info = array('vin' => $cutoff['vin'], 'status' => 'used', 'position' => $position, 'total' => $total_wip);
             } else {
                 $cutoff_info = array('vin' => $cutoff['vin'], 'status' => 'stale', 'position' => null, 'total' => $total_wip);
@@ -910,13 +1032,27 @@ class Wip_calc_model extends CI_Model
         foreach (array('total_gross', 'total_cutoff', 'total') as $k) {
             $value_keys[] = $k;
         }
-        $vin_keys = array_map(function ($k) {
-            return $k . '_vin';
-        }, $shop_keys);
+        // Each shop's cutoff trail is two columns — the VIN, and its SEQUENCE in
+        // that shop's cached WIP list — so the report says not just which VIN was
+        // used, but where in the list it sits (the "unit N of total" position the
+        // Formula Detail shows). Columns are addressed by index rather than
+        // chr()/range() letter arithmetic, which breaks past column Z.
+        $colAt = function ($index) {
+            return Coordinate::stringFromColumnIndex($index);
+        };
+        $unit_totals = array(); // shop => cached units, shown once in the Seq sub-label
+        foreach ($shop_keys as $k) {
+            $unit_totals[$k] = $this->unit_index($source, $k)['total'];
+        }
 
-        $lastCol = chr(ord('A') + 5 + count($value_keys) + count($vin_keys) - 1);
-        $firstShopCol = chr(ord('A') + 5); // after No, Part Number, Material Description, Shop Code, Model
-        $lastNumericCol = chr(ord($firstShopCol) + count($value_keys) - 1); // last column before the VIN block
+        $firstShopIndex = 6; // after No, Part Number, Material Description, Shop Code, Model
+        $lastNumericIndex = $firstShopIndex + count($value_keys) - 1;
+        $firstVinIndex = $lastNumericIndex + 1;
+        $lastIndex = $lastNumericIndex + count($shop_keys) * 2;
+
+        $firstShopCol = $colAt($firstShopIndex);
+        $lastNumericCol = $colAt($lastNumericIndex); // last column before the cutoff block
+        $lastCol = $colAt($lastIndex);
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -945,19 +1081,27 @@ class Wip_calc_model extends CI_Model
             $sheet->mergeCells("{$col}{$headerRow}:{$col}{$subHeaderRow}");
         }
 
-        $col = $firstShopCol;
+        $index = $firstShopIndex;
         foreach ($groups as $group) {
             list($label, ) = $group;
-            $endCol = chr(ord($col) + 2);
+            $col = $colAt($index);
+            $endCol = $colAt($index + 2);
             $sheet->setCellValue("{$col}{$headerRow}", $label);
             $sheet->mergeCells("{$col}{$headerRow}:{$endCol}{$headerRow}");
             $sheet->fromArray(array('Gross', 'Cutoff', 'Net'), null, "{$col}{$subHeaderRow}");
-            $col = chr(ord($endCol) + 1);
+            $index += 3;
         }
         foreach ($shop_keys as $k) {
-            $sheet->setCellValue("{$col}{$headerRow}", ($shop_labels[$k] ?? strtoupper($k)) . ' Cutoff VIN');
-            $sheet->mergeCells("{$col}{$headerRow}:{$col}{$subHeaderRow}");
-            $col++;
+            $col = $colAt($index);
+            $endCol = $colAt($index + 1);
+            $sheet->setCellValue("{$col}{$headerRow}", ($shop_labels[$k] ?? strtoupper($k)) . ' Cutoff');
+            $sheet->mergeCells("{$col}{$headerRow}:{$endCol}{$headerRow}");
+            // The unit total is the same for every row of the column, so it goes
+            // in the sub-label ("Seq (of 200)") instead of being repeated per cell.
+            // No cached units for that shop -> a plain "Seq", not "Seq (of 0)".
+            $seq_label = $unit_totals[$k] > 0 ? 'Seq (of ' . $unit_totals[$k] . ')' : 'Seq';
+            $sheet->fromArray(array('VIN', $seq_label), null, "{$col}{$subHeaderRow}");
+            $index += 2;
         }
 
         $sheet->getStyle("A{$headerRow}:{$lastCol}{$subHeaderRow}")->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
@@ -968,21 +1112,27 @@ class Wip_calc_model extends CI_Model
         $sheet->getRowDimension($headerRow)->setRowHeight(20);
         $sheet->getRowDimension($subHeaderRow)->setRowHeight(20);
         // The sub-label row reads lighter, since it's secondary to the group name above it.
-        $sheet->getStyle("{$firstShopCol}{$subHeaderRow}:{$lastNumericCol}{$subHeaderRow}")->getFont()->setSize(9)->setBold(false);
+        $sheet->getStyle("{$firstShopCol}{$subHeaderRow}:{$lastCol}{$subHeaderRow}")->getFont()->setSize(9)->setBold(false);
 
         // ---- Data rows ----
         $r = $firstDataRow;
         $totals = array_fill_keys($value_keys, 0.0);
 
         foreach ($result['data'] as $i => $row) {
+            // No cutoff VIN (or one no longer cached) -> both cells left blank by
+            // fromArray's strict-null handling.
+            $cutoff_trail = array();
+            foreach ($shop_keys as $k) {
+                $cutoff_trail[] = $row[$k . '_vin'];
+                $cutoff_trail[] = $row[$k . '_vin_seq'] === null ? null : (int) $row[$k . '_vin_seq'];
+            }
+
             $rowData = array_merge(
                 array($i + 1, $row['part_number'], $row['material_description'], $row['shop_code'], $row['models']),
                 array_map(function ($k) use ($row) {
                     return (float) $row[$k];
                 }, $value_keys),
-                array_map(function ($k) use ($row) {
-                    return $row[$k]; // null -> left blank by fromArray's strict-null handling
-                }, $vin_keys)
+                $cutoff_trail
             );
             // strictNullComparison: without it, fromArray()'s loose "== null"
             // check treats numeric 0 as null and leaves the cell blank.
@@ -1029,13 +1179,20 @@ class Wip_calc_model extends CI_Model
         // The Net/Gross/Cutoff columns are centered — the VIN columns past
         // $lastNumericCol stay left-aligned (default), since they're text.
         $sheet->getStyle("{$firstShopCol}{$firstDataRow}:{$lastNumericCol}{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        // Each Seq column is a plain number, so it's centered like the values;
+        // the VIN beside it stays left-aligned.
+        for ($index = $firstVinIndex + 1; $index <= $lastIndex; $index += 2) {
+            $sheet->getStyle($colAt($index) . $firstDataRow . ':' . $colAt($index) . $r)
+                ->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        }
 
         // ---- Dim the Gross/Cutoff columns slightly so the main
         // Welding/Toso/Assy/Total (Net) figure still reads as the primary value ----
-        $col = $firstShopCol;
+        $index = $firstShopIndex;
         foreach ($groups as $group) {
-            $sheet->getStyle("{$col}{$firstDataRow}:" . chr(ord($col) + 1) . $r)->getFont()->getColor()->setRGB('8B93A1');
-            $col = chr(ord($col) + 3); // Gross, Cutoff, Net -> next group
+            $sheet->getStyle($colAt($index) . $firstDataRow . ':' . $colAt($index + 1) . $r)
+                ->getFont()->getColor()->setRGB('8B93A1');
+            $index += 3; // Gross, Cutoff, Net -> next group
         }
 
         // ---- Zebra stripe (one conditional-format rule, not a per-row fill) ----
@@ -1050,17 +1207,20 @@ class Wip_calc_model extends CI_Model
         // A colored left border marks where one group (Welding | Toso |
         // Assy | Total) ends and the next begins — same accent used for the
         // on-screen table's .col-group-start divider.
-        $col = $firstShopCol;
+        $index = $firstShopIndex;
         foreach ($groups as $group) {
-            $sheet->getStyle("{$col}{$headerRow}:{$col}{$r}")->getBorders()->getLeft()
+            $sheet->getStyle($colAt($index) . $headerRow . ':' . $colAt($index) . $r)->getBorders()->getLeft()
                 ->setBorderStyle(Border::BORDER_MEDIUM)->getColor()->setRGB('4F8CFF');
-            $col = chr(ord($col) + 3);
+            $index += 3;
         }
+        // …and one more where the numbers end and the cutoff VIN / Seq pairs begin.
+        $sheet->getStyle($colAt($firstVinIndex) . $headerRow . ':' . $colAt($firstVinIndex) . $r)->getBorders()->getLeft()
+            ->setBorderStyle(Border::BORDER_MEDIUM)->getColor()->setRGB('4F8CFF');
 
         $sheet->getStyle("A{$r}:{$lastCol}{$r}")->getBorders()->getTop()->setBorderStyle(Border::BORDER_DOUBLE);
 
-        foreach (range('A', $lastCol) as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
+        for ($index = 1; $index <= $lastIndex; $index++) {
+            $sheet->getColumnDimension($colAt($index))->setAutoSize(true);
         }
         $sheet->getColumnDimension('C')->setAutoSize(false)->setWidth(38);
 
@@ -1162,19 +1322,59 @@ class Wip_calc_model extends CI_Model
         return $this->counts_cache[$cache_key] = $freq;
     }
 
-    /** wip_data id of a VIN in a summary unit shop's list, or null if it isn't cached there. */
-    protected function unit_vin_id($source, $unit_shop, $vin)
+    /**
+     * VIN -> its wip_data id and SEQUENCE within one shop's cached list, plus
+     * that list's total — so a cutoff VIN can be reported as "seq 131 of 200",
+     * the same number the Master WIP list shows for that unit.
+     *
+     * SEQUENCE counts from the oldest row up (id ascending), exactly as
+     * Wip_data_model::get_shop() derives it; the id is what get_counts()
+     * counts from ("id >=", i.e. that unit and every later one). A VIN cached
+     * twice keeps its first (oldest) position, which is the row the old
+     * per-part lookup picked too.
+     *
+     * Memoized per (source, shop) — the whole calculation shares a handful of
+     * these, instead of two queries per part. Handles the WOS IPI / FTI lists
+     * (summary unit shops) as well as the regular shops.
+     *
+     * @return array{ids:array<string,int>, seq:array<string,int>, total:int}
+     */
+    protected function unit_index($source, $unit_shop)
     {
+        $cache_key = $source . '|' . $unit_shop;
+        if (isset($this->unit_index_cache[$cache_key])) {
+            return $this->unit_index_cache[$cache_key];
+        }
+
         $code = $this->wos_list_code($unit_shop);
-        $this->db->select('id')->where(array('source' => $source, 'vin' => $vin));
+        $this->db->select('id, vin')->where('source', $source);
         if ($code === null) {
             $this->db->where('shop', $unit_shop);
         } else {
             $this->db->where(array('shop' => 'wos', 'shopcode' => $code));
         }
-        $found = $this->db->get('wip_data')->row_array();
+        $rows = $this->db->order_by('id', 'asc')->get('wip_data')->result_array();
 
-        return $found ? (int) $found['id'] : null;
+        $ids = array();
+        $seq = array();
+        foreach ($rows as $i => $row) {
+            $vin = strtoupper(trim((string) $row['vin']));
+            if ($vin === '' || isset($ids[$vin])) {
+                continue;
+            }
+            $ids[$vin] = (int) $row['id'];
+            $seq[$vin] = $i + 1;
+        }
+
+        return $this->unit_index_cache[$cache_key] = array('ids' => $ids, 'seq' => $seq, 'total' => count($rows));
+    }
+
+    /** wip_data id of a VIN in a summary unit shop's list, or null if it isn't cached there. */
+    protected function unit_vin_id($source, $unit_shop, $vin)
+    {
+        $index = $this->unit_index($source, $unit_shop);
+
+        return $index['ids'][strtoupper(trim((string) $vin))] ?? null;
     }
 
     /**
@@ -1201,9 +1401,13 @@ class Wip_calc_model extends CI_Model
      * cutoff VIN as set, even when stale) and <card>_own_gross (every unit
      * in the card's own shop, i.e. what Net would be from the oldest unit).
      *
+     * $ignore_excluded keeps parts marked "tidak dihitung" counted as usual —
+     * missing_cutoff() needs the figures those parts WOULD have, so the page
+     * can still show the row its decision belongs to.
+     *
      * @return array{ok:bool, message:string, stages:array, totals:array, parts:array, data:array}
      */
-    public function summary($scope = 'all', $basis = 'bom', $with_state = false)
+    public function summary($scope = 'all', $basis = 'bom', $with_state = false, $ignore_excluded = false)
     {
         $sources = in_array($scope, array('kap1', 'kap2'), true) ? array($scope) : array('kap1', 'kap2');
         $stages = $this->summary_stages();
@@ -1278,6 +1482,17 @@ class Wip_calc_model extends CI_Model
                     }
                     $cards[] = $shop;
                 }
+
+                // A Part Special rule replaces the Shop Code: the part sits on
+                // its first shop's card only, counted over exactly the shops the
+                // rule lists (its first one Net from that shop's cutoff VIN, the
+                // rest in full). Those shops are always the card's own shop plus
+                // later ones, so every accumulator key below already exists.
+                $special = $this->special_shops($source)[$part_key] ?? null;
+                if ($special !== null) {
+                    $cards = array($special[0]);
+                }
+
                 if (empty($cards)) {
                     continue;
                 }
@@ -1290,7 +1505,9 @@ class Wip_calc_model extends CI_Model
                         'shop_code'            => $row['shop_code'],
                         'source_set'           => array(),
                         'juklak_main'          => null,
+                        'excluded_reason'      => null, // "tidak dihitung" decision -> counted 0, with its reason
                         'vin_set'              => array(), // card => [KAP line => cutoff VIN used there]
+                        'seq_set'              => array(), // card => [KAP line => that VIN's "SEQUENCE / total" there]
                         'vin_state'            => array(), // card => none / stale / ok ($with_state only)
                         'vin_raw'              => array(), // card => cutoff VIN as set ($with_state only)
                     );
@@ -1321,6 +1538,16 @@ class Wip_calc_model extends CI_Model
                     continue;
                 }
 
+                // Ditandai "tidak dihitung" — counted 0, unless the caller asked
+                // for the figures the part would have had (missing_cutoff()).
+                $excluded_reason = $this->excluded_parts($source)[$part_key] ?? null;
+                if ($excluded_reason !== null) {
+                    $acc[$part_number]['excluded_reason'] = $excluded_reason;
+                    if (!$ignore_excluded) {
+                        continue;
+                    }
+                }
+
                 $qty = (float) $row['qty'];
                 $key = $this->match_key($row['model'], $row['suffix']);
 
@@ -1329,7 +1556,8 @@ class Wip_calc_model extends CI_Model
                     // is counted Net from the part's cutoff VIN there: Welding / Toso /
                     // Assy cutoffs come from wip_calc_cutoff, IPI / FTI ones from their
                     // part list (the same VIN WIP Calc IPI / FTI uses).
-                    $own = $stages[$card][0];
+                    $card_units = $special !== null ? $special : $stages[$card];
+                    $own = $card_units[0];
                     if (isset($list_parts[$card])) {
                         $vin = $list_parts[$card][$part_key] ?? null;
                     } else {
@@ -1344,6 +1572,11 @@ class Wip_calc_model extends CI_Model
                         }
                         if ($boundary_of[$vin_key] !== null) { // same as calc(): only a VIN still cached is shown
                             $acc[$part_number]['vin_set'][$card][strtoupper($source)] = $vin;
+                            // …and where that VIN sits in the own shop's list, as
+                            // the Master WIP list numbers it ("131 / 200").
+                            $unit_index = $this->unit_index($source, $own);
+                            $acc[$part_number]['seq_set'][$card][strtoupper($source)] =
+                                $unit_index['seq'][strtoupper(trim($vin))] . ' / ' . $unit_index['total'];
                         }
                     }
 
@@ -1355,7 +1588,7 @@ class Wip_calc_model extends CI_Model
                         $acc[$part_number][$card . '_own_gross'] += ($all_units[$key] ?? 0) * $gross_add;
                     }
 
-                    foreach ($stages[$card] as $unit_shop) {
+                    foreach ($card_units as $unit_shop) {
                         if ($unit_shop === $own) {
                             if ($vin === null) {
                                 continue; // no cutoff VIN set yet -> Net 0 in the card's own unit shop
@@ -1392,16 +1625,19 @@ class Wip_calc_model extends CI_Model
             unset($row['source_set']);
 
             foreach ($stages as $card => $units) {
-                // Cutoff VIN used in the card's own shop; labelled per line when both are in scope.
-                $vins = $row['vin_set'][$card] ?? array();
-                if (count($vins) > 1) {
-                    $labelled = array();
-                    foreach ($vins as $line => $vin) {
-                        $labelled[] = $line . ': ' . $vin;
+                // Cutoff VIN used in the card's own shop, and that VIN's SEQUENCE
+                // there; both labelled per line when both are in scope.
+                foreach (array('_vin' => 'vin_set', '_vin_seq' => 'seq_set') as $suffix => $set_key) {
+                    $values = $row[$set_key][$card] ?? array();
+                    if (count($values) > 1) {
+                        $labelled = array();
+                        foreach ($values as $line => $value) {
+                            $labelled[] = $line . ': ' . $value;
+                        }
+                        $row[$card . $suffix] = implode(', ', $labelled);
+                    } else {
+                        $row[$card . $suffix] = $values ? reset($values) : null;
                     }
-                    $row[$card . '_vin'] = implode(', ', $labelled);
-                } else {
-                    $row[$card . '_vin'] = $vins ? reset($vins) : null;
                 }
 
                 $sum = 0.0;
@@ -1425,7 +1661,7 @@ class Wip_calc_model extends CI_Model
                     unset($row[$card . '_own_gross']);
                 }
             }
-            unset($row['vin_set'], $row['vin_state'], $row['vin_raw']);
+            unset($row['vin_set'], $row['seq_set'], $row['vin_state'], $row['vin_raw']);
 
             // "Total" card: every card's value for this part added up — no card filter.
             $row_total = 0.0;
@@ -1482,8 +1718,11 @@ class Wip_calc_model extends CI_Model
 
         $data = array();
         foreach ($sources as $source) {
-            // One line at a time, so each row's cutoff state belongs to exactly one line.
-            $result = $this->summary($source, $basis, true);
+            // One line at a time, so each row's cutoff state belongs to exactly
+            // one line. Parts already marked "tidak dihitung" keep the figures
+            // they would have had, so their row (and its reason) still shows.
+            $decisions = $this->part_decisions($source);
+            $result = $this->summary($source, $basis, true, true);
             if (!$result['ok']) {
                 return array('ok' => false, 'message' => $result['message'], 'stages' => $stages, 'data' => array());
             }
@@ -1518,6 +1757,11 @@ class Wip_calc_model extends CI_Model
                         $item['v_' . $shop] = ($shop !== $own && in_array($shop, $units, true)) ? $row[$card . '__' . $shop] : null;
                     }
                     $item['summary'] = $row['sum_' . $card];
+
+                    $decision = $decisions[strtoupper(trim($row['part_number']))] ?? null;
+                    $item['decision'] = $decision ? $decision['decision'] : null;
+                    $item['reason'] = $decision ? $decision['reason'] : '';
+
                     $data[] = $item;
                 }
             }
@@ -1530,6 +1774,16 @@ class Wip_calc_model extends CI_Model
         });
 
         return array('ok' => true, 'message' => 'ok', 'stages' => $stages, 'data' => $data);
+    }
+
+    /** Human label for a part's decision (wip_part_decision), for reports. */
+    public function decision_label($decision)
+    {
+        if ($decision === 'excluded') {
+            return 'Tidak dihitung';
+        }
+
+        return $decision === 'counted' ? 'Dihitung' : 'Belum diputuskan';
     }
 
     /** Human label for a card's cutoff state in missing_cutoff(). */
@@ -1663,8 +1917,15 @@ class Wip_calc_model extends CI_Model
             $unit_totals[$unit_shop] = array('all' => $this->trim_qty($t['all']), 'counted' => $this->trim_qty($t['counted']));
         }
 
+        // Keputusan part ini (menu Summary Tanpa Cutoff), supaya alasan
+        // "tidak dihitung" bisa dibaca dari modal Detail.
+        $decision = $this->part_decisions($source)[$part_key] ?? null;
+
         return array(
             'ok'                   => true,
+            'decision'             => $decision ? $decision['decision'] : null,
+            'decision_label'       => $this->decision_label($decision ? $decision['decision'] : null),
+            'reason'               => $decision ? $decision['reason'] : '',
             'source'               => $source,
             'card'                 => $card,
             'card_label'           => $labels[$card] ?? strtoupper($card),
@@ -1685,9 +1946,10 @@ class Wip_calc_model extends CI_Model
 
     /**
      * missing_cutoff() as a styled .xlsx — the same rows the page shows for
-     * the selected card ('' = all cards) and cutoff status ('' = both).
+     * the selected card ('' = all cards), cutoff status ('' = both) and
+     * decision ('' = all, 'undecided' = belum diputuskan).
      */
-    public function export_missing_cutoff($scope, $card = '', $status = '', $basis = 'bom')
+    public function export_missing_cutoff($scope, $card = '', $status = '', $basis = 'bom', $decision = '')
     {
         $result = $this->missing_cutoff($scope, $basis);
         if (!$result['ok']) {
@@ -1698,19 +1960,31 @@ class Wip_calc_model extends CI_Model
 
         $card = isset($result['stages'][$card]) ? $card : '';
         $status = in_array($status, array('none', 'stale'), true) ? $status : '';
-        $rows = array_values(array_filter($result['data'], function ($row) use ($card, $status) {
-            return ($card === '' || $row['card'] === $card) && ($status === '' || $row['vin_state'] === $status);
+        $decision = in_array($decision, array('counted', 'excluded', 'undecided'), true) ? $decision : '';
+        $rows = array_values(array_filter($result['data'], function ($row) use ($card, $status, $decision) {
+            if ($card !== '' && $row['card'] !== $card) {
+                return false;
+            }
+            if ($status !== '' && $row['vin_state'] !== $status) {
+                return false;
+            }
+            if ($decision === 'undecided') {
+                return $row['decision'] === null;
+            }
+
+            return $decision === '' || $row['decision'] === $decision;
         }));
 
         $labels = $this->summary_labels();
         $headers = array(
             'No', 'Line', 'Card', 'Part Number', 'Material Description', 'UOM', 'Shop Code', 'Status Cutoff', 'Cutoff VIN', 'Shop Sendiri',
+            'Keputusan', 'Alasan',
             'Gross Shop Sendiri', 'Terhitung Shop Sendiri', 'Welding', 'Toso', 'Assy', 'Summary',
         );
         $value_keys = array('own_gross', 'own_counted', 'v_weld', 'v_toso', 'v_assy', 'summary');
-        $lastCol = 'P';
-        $firstValueCol = 'K';
-        $leadLastCol = 'J';
+        $lastCol = 'R';
+        $firstValueCol = 'M';
+        $leadLastCol = 'L';
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -1746,6 +2020,7 @@ class Wip_calc_model extends CI_Model
             $lead_values = array(
                 $i + 1, $row['source'], $row['card_label'], $row['part_number'], $row['material_description'], $row['uom'],
                 $row['shop_code'], $this->cutoff_state_label($row['vin_state']), $row['cutoff_vin'], $row['own_label'],
+                $this->decision_label($row['decision']), $row['reason'],
             );
             // null (a shop the card doesn't count) stays blank; strictNullComparison keeps a numeric 0.
             $sheet->fromArray(array_merge($lead_values, array_map(function ($k) use ($row) {
@@ -1780,7 +2055,8 @@ class Wip_calc_model extends CI_Model
 
         $sheet->getStyle("A{$headerRow}:C{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
         $sheet->getStyle("F{$firstDataRow}:F{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-        $sheet->getStyle("J{$firstDataRow}:{$lastCol}{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle("J{$firstDataRow}:K{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle("{$firstValueCol}{$firstDataRow}:{$lastCol}{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
         $sheet->getStyle("{$lastCol}{$firstDataRow}:{$lastCol}{$r}")->getFont()->setBold(true);
 
         if ($r > $firstDataRow) {
@@ -1797,6 +2073,7 @@ class Wip_calc_model extends CI_Model
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
         $sheet->getColumnDimension('E')->setAutoSize(false)->setWidth(38);
+        $sheet->getColumnDimension('L')->setAutoSize(false)->setWidth(32); // Alasan
 
         $sheet->freezePane("A{$firstDataRow}");
         $sheet->getPageSetup()
@@ -1861,6 +2138,9 @@ class Wip_calc_model extends CI_Model
         } else {
             $units = $result['stages'][$stage];
             $lead[] = $stage_label . ' Cutoff VIN';
+            // That VIN's SEQUENCE in the card's own shop ("131 / 200"), labelled
+            // per KAP line when both are in scope — same shape as the VIN itself.
+            $lead[] = $stage_label . ' Cutoff Seq';
             $value_keys = array_merge(array_map(function ($unit_shop) use ($stage) {
                 return $stage . '__' . $unit_shop;
             }, $units), array($sum_key));
@@ -1904,6 +2184,7 @@ class Wip_calc_model extends CI_Model
             $lead_values = array($i + 1, $row['part_number'], $row['material_description'], $row['uom'], $row['shop_code'], $row['source']);
             if (!$is_total) {
                 $lead_values[] = $row[$stage . '_vin'];
+                $lead_values[] = $row[$stage . '_vin_seq'];
             }
             $rowData = array_merge($lead_values, array_map(function ($k) use ($row) {
                 return (float) $row[$k];

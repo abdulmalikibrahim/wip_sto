@@ -63,6 +63,8 @@ $route['bom/data'] = 'bom/data';
 $route['bom/template'] = 'bom/template';
 $route['bom/export'] = 'bom/export';
 $route['bom/upload'] = 'bom/upload';
+$route['bom/create'] = 'bom/create';
+$route['bom/update/(:num)'] = 'bom/update/$1';
 $route['bom/delete/(:num)'] = 'bom/delete/$1';
 
 // Part List (compared against Master BOM)
@@ -72,7 +74,10 @@ $route['part-list/compare/data'] = 'part_list/compare_data';
 $route['part-list/compare/export'] = 'part_list/compare_export';
 $route['part-list/template'] = 'part_list/template';
 $route['part-list/export'] = 'part_list/export';
+$route['part-list/export-csv'] = 'part_list/export_csv';
 $route['part-list/upload'] = 'part_list/upload';
+$route['part-list/create'] = 'part_list/create';
+$route['part-list/update/(:num)'] = 'part_list/update/$1';
 $route['part-list/delete/(:num)'] = 'part_list/delete/$1';
 $route['part-list/delete-bulk'] = 'part_list/delete_bulk';
 
@@ -82,7 +87,17 @@ $route['juklak/data'] = 'juklak/data';
 $route['juklak/template'] = 'juklak/template';
 $route['juklak/export'] = 'juklak/export';
 $route['juklak/upload'] = 'juklak/upload';
+$route['juklak/create'] = 'juklak/create';
+$route['juklak/suffixes'] = 'juklak/suffixes';
+$route['juklak/update/(:num)'] = 'juklak/update/$1';
 $route['juklak/delete/(:num)'] = 'juklak/delete/$1';
+
+// Part Special (per line: shop mana saja yang dihitung untuk sebuah part number)
+$route['special-part'] = 'special_part/index';
+$route['special-part/data'] = 'special_part/data';
+$route['special-part/save'] = 'special_part/save';
+$route['special-part/suggest'] = 'special_part/suggest';
+$route['special-part/delete/(:num)'] = 'special_part/delete/$1';
 
 // WIP WOS IPI / FTI (upload-only WIP stage before Welding; one list each per KAP line)
 $route['wip/wos-(ipi|fti)'] = 'wip/wos/$1';
@@ -149,6 +164,8 @@ $route['wip/summary/missing-cutoff'] = 'wip/summary_missing';
 $route['wip/summary/missing-cutoff/data'] = 'wip/summary_missing_data';
 $route['wip/summary/missing-cutoff/detail'] = 'wip/summary_missing_detail';
 $route['wip/summary/missing-cutoff/export'] = 'wip/summary_missing_export';
+$route['wip/summary/missing-cutoff/decide'] = 'wip/summary_missing_decide';
+$route['wip/summary/missing-cutoff/decide/clear'] = 'wip/summary_missing_decide_clear';
 
 // Akun (CRUD)
 $route['akun'] = 'akun/index';

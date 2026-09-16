@@ -41,6 +41,8 @@ class Juklak extends MY_Controller
                     'main_part_no' => $r['main_part_no'],
                     'is_main'      => $r['is_main'],
                     'suffix_qty'   => implode(', ', $qty),
+                    // Raw map, so the Edit / Copy modal can fill its Qty per Suffix rows.
+                    'suffix_qty_map' => (object) $r['suffix_qty'],
                 );
             }
         }
@@ -124,6 +126,61 @@ class Juklak extends MY_Controller
 
         set_flash($notes ? 'warning' : 'success', $message);
         redirect('juklak');
+    }
+
+    /** Suffix codes known to Master BOM / Part List, for the form's datalist (AJAX). */
+    public function suffixes()
+    {
+        $this->output->set_content_type('application/json')->set_output(json_encode(array(
+            'status' => 'success',
+            'data'   => $this->Juklak_model->suffixes(),
+        )));
+    }
+
+    /** Add one Juklak row by hand (AJAX only — "Tambah Manual" / "Copy"). */
+    public function create()
+    {
+        $this->require_admin();
+
+        $result = $this->Juklak_model->create(
+            (string) $this->input->post('plant'),
+            (string) $this->input->post('part_no'),
+            (string) $this->input->post('part_name'),
+            (string) $this->input->post('main_part_no'),
+            (array) $this->input->post('suffix'),
+            (array) $this->input->post('suffix_qty'),
+            $this->auth_user['id']
+        );
+
+        $this->output->set_content_type('application/json')->set_output(json_encode(array(
+            'status'  => $result['ok'] ? 'success' : 'error',
+            'message' => $result['message'],
+        )));
+    }
+
+    /** Edit one Juklak row (AJAX only). */
+    public function update($id)
+    {
+        $this->require_admin();
+
+        // has_suffix marks a post from the current form: without it the Qty per
+        // Suffix rows are left alone; with it, an empty list really means "kosongkan".
+        $has_suffix = (string) $this->input->post('has_suffix') === '1';
+
+        $result = $this->Juklak_model->update(
+            $id,
+            (string) $this->input->post('plant'),
+            (string) $this->input->post('part_no'),
+            (string) $this->input->post('part_name'),
+            (string) $this->input->post('main_part_no'),
+            $has_suffix ? (array) $this->input->post('suffix') : null,
+            $has_suffix ? (array) $this->input->post('suffix_qty') : null
+        );
+
+        $this->output->set_content_type('application/json')->set_output(json_encode(array(
+            'status'  => $result['ok'] ? 'success' : 'error',
+            'message' => $result['message'],
+        )));
     }
 
     /** Delete one Juklak row (AJAX only). */

@@ -1,4 +1,6 @@
 <?php
+$is_admin = ($auth_user['role'] ?? '') === 'admin';
+$can_decide = $is_admin && $decision_ready;
 $label_of = function ($key) use ($shops) {
     return $shops[$key] ?? strtoupper($key);
 };
@@ -12,6 +14,14 @@ $units_text = function ($card) use ($stages, $label_of) {
         <i class="bi bi-arrow-left"></i> WIP Summary
     </a>
 </div>
+
+<?php if (!$decision_ready): ?>
+<div class="alert alert-danger">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    Tabel <code>wip_part_decision</code> belum ada, jadi kolom <strong>Keputusan</strong> belum bisa diisi. Jalankan
+    <code>database/migrations/2026_09_16_create_wip_part_decision.sql</code> dulu (mis. lewat tab SQL di phpMyAdmin).
+</div>
+<?php endif; ?>
 
 <div class="alert alert-secondary small mb-3">
     <i class="bi bi-info-circle me-1"></i>
@@ -80,6 +90,15 @@ $units_text = function ($card) use ($stages, $label_of) {
                 <option value="stale">Cutoff VIN stale</option>
             </select>
         </div>
+        <div class="d-flex align-items-center gap-2">
+            <span class="small text-secondary"><i class="bi bi-check2-square me-1"></i>Keputusan:</span>
+            <select class="form-select form-select-sm w-auto" id="missingDecisionFilter">
+                <option value="">Semua keputusan</option>
+                <option value="undecided">Belum diputuskan</option>
+                <option value="counted">Dihitung</option>
+                <option value="excluded">Tidak dihitung</option>
+            </select>
+        </div>
     </div>
     <a href="<?= base_url('wip/summary/missing-cutoff/export') ?>" class="btn btn-sm btn-success" id="btnExportMissing">
         <i class="bi bi-file-earmark-excel"></i> Download Excel
@@ -112,6 +131,8 @@ $units_text = function ($card) use ($stages, $label_of) {
                         <th class="text-center" title="Unit di Toso (dihitung semua)">Toso</th>
                         <th class="text-center" title="Unit di Assy (dihitung semua)">Assy</th>
                         <th class="text-center col-group-start">Summary</th>
+                        <th class="text-center">Status</th>
+                        <th>Action</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -140,7 +161,47 @@ $units_text = function ($card) use ($stages, $label_of) {
     </div>
 </div>
 
+<?php if ($can_decide): ?>
+<!-- Alasan "tidak dihitung" -->
+<div class="modal fade" id="modalMissingReason" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="formMissingReason">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-slash-circle me-1"></i> Tandai Tidak Dihitung</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="missingReasonAlert" class="alert alert-danger d-none py-2 small"></div>
+                    <input type="hidden" id="missingReasonPlant" value="">
+                    <input type="hidden" id="missingReasonPart" value="">
+                    <dl class="row small mb-3">
+                        <dt class="col-4">Line</dt><dd class="col-8" id="missingReasonLine">&mdash;</dd>
+                        <dt class="col-4">Part Number</dt><dd class="col-8" id="missingReasonPartLabel">&mdash;</dd>
+                    </dl>
+                    <div class="alert alert-warning py-2 px-3 small">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        Part ini akan <strong>dihitung 0</strong> di WIP Calc dan WIP Summary untuk line tersebut (semua shop),
+                        dan alasannya ditampilkan sebagai keterangan.
+                    </div>
+                    <label class="form-label small">Alasan <span class="text-danger">*</span></label>
+                    <textarea class="form-control form-control-sm" id="missingReasonText" rows="3" maxlength="255" required
+                              placeholder="mis. part belum implementasi, jadi belum terpasang di unit"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning btn-sm" id="btnSaveMissingReason">
+                        <i class="bi bi-check-lg me-1"></i> Simpan
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <script>
     var WIP_MISSING_SHOPS = <?= json_encode($shops) ?>;
     var WIP_MISSING_STAGES = <?= json_encode($stages) ?>;
+    var WIP_MISSING_CAN_DECIDE = <?= $can_decide ? 'true' : 'false' ?>;
 </script>

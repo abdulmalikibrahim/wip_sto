@@ -42,8 +42,16 @@
             data: null,
             orderable: false,
             searchable: false,
+            className: 'text-nowrap',
             render: function (row) {
-                return '<button class="btn btn-sm btn-danger btn-delete-part-list" data-id="' + row.id + '" title="Delete">' +
+                // Baris ini dibawa lewat data-row supaya form Edit tidak perlu
+                // request lagi ke server (dan aman dari child row responsive).
+                var data = encodeURIComponent(JSON.stringify(row));
+                return '<button class="btn btn-sm btn-outline-primary btn-edit-part-list me-1" title="Edit" data-row="' +
+                    data + '"><i class="bi bi-pencil"></i></button>' +
+                    '<button class="btn btn-sm btn-outline-secondary btn-copy-part-list me-1" title="Copy — isi form baru dengan data baris ini" data-row="' +
+                    data + '"><i class="bi bi-files"></i></button>' +
+                    '<button class="btn btn-sm btn-danger btn-delete-part-list" data-id="' + row.id + '" title="Delete">' +
                     '<i class="bi bi-trash"></i></button>';
             }
         });
@@ -165,19 +173,86 @@
         updateDownloadLink();
     });
 
-    // Keep the "Download" button in sync with whichever Model card is active.
+    // Keep both Download buttons in sync with whichever Model card is active.
     function updateDownloadLink() {
-        var $btn = $('#btnDownloadPartList');
-        if (!$btn.length) return;
-        var base = BASE_URL + 'part-list/export';
-        $btn.attr('href', currentModelFilter ? base + '?model_filter=' + encodeURIComponent(currentModelFilter) : base);
+        [['#btnDownloadPartList', 'part-list/export-csv'], ['#btnDownloadPartListXlsx', 'part-list/export']]
+            .forEach(function (pair) {
+                var $btn = $(pair[0]);
+                if (!$btn.length) return;
+                var base = BASE_URL + pair[1];
+                $btn.attr('href', currentModelFilter ? base + '?model_filter=' + encodeURIComponent(currentModelFilter) : base);
+            });
     }
 
-    // Show a loading spinner on the Download button while the file is
-    // generated/transferred, instead of giving no feedback at all.
-    $('#btnDownloadPartList').on('click', function (e) {
+    // CSV dibiarkan jalan sebagai link biasa: server mengirimnya sambil jalan,
+    // jadi browser langsung menyimpan tanpa harus menunggu seluruh file jadi.
+    // Yang .xlsx disusun dulu di server, jadi tetap diberi indikator loading.
+    $('#btnDownloadPartListXlsx').on('click', function (e) {
         e.preventDefault();
         downloadExcel($(this));
+    });
+
+    // ---- Tambah / Edit / Copy satu baris Part List (admin) ----
+    var PART_LIST_FIELDS = ['model', 'suffix', 'component', 'part_number',
+        'material_description', 'qty', 'uom', 'shop_code'];
+
+    // mode 'edit' menyimpan ke baris yang sama; 'add' dan 'copy' menyimpan
+    // sebagai baris baru — bedanya cuma form 'copy' sudah terisi.
+    function openPartListModal(row, mode) {
+        $('#partListEditAlert').addClass('d-none').text('');
+        $('#partListEditId').val(mode === 'edit' && row ? row.id : '');
+        PART_LIST_FIELDS.forEach(function (field) {
+            $('#partListEdit_' + field).val(row && row[field] != null ? row[field] : '');
+        });
+        $('#partListModalTitle').text(mode === 'edit' ? 'Edit Part List Entry'
+            : (mode === 'copy' ? 'Copy Part List Entry' : 'Tambah Part List Entry'));
+        bootstrap.Modal.getOrCreateInstance('#modalEditPartList').show();
+    }
+
+    function partListRowOf($btn) {
+        return JSON.parse(decodeURIComponent($btn.attr('data-row')));
+    }
+
+    $('#btnAddPartList').on('click', function () {
+        openPartListModal(null, 'add');
+    });
+
+    $(document).on('click', '#tblPartList .btn-edit-part-list', function () {
+        openPartListModal(partListRowOf($(this)), 'edit');
+    });
+
+    $(document).on('click', '#tblPartList .btn-copy-part-list', function () {
+        openPartListModal(partListRowOf($(this)), 'copy');
+    });
+
+    $('#formEditPartList').on('submit', function (e) {
+        e.preventDefault();
+        var $alert = $('#partListEditAlert').addClass('d-none').text('');
+        var $btn = $('#btnSaveEditPartList').prop('disabled', true);
+        var id = $('#partListEditId').val();
+
+        var payload = {};
+        PART_LIST_FIELDS.forEach(function (field) {
+            payload[field] = $('#partListEdit_' + field).val();
+        });
+
+        $.post(BASE_URL + 'part-list/' + (id ? 'update/' + id : 'create'), payload, null, 'json')
+            .done(function (resp) {
+                if (resp.status !== 'success') {
+                    $alert.removeClass('d-none').text(resp.message || 'Gagal menyimpan.');
+                    return;
+                }
+                toast('success', resp.message || 'Tersimpan.');
+                bootstrap.Modal.getOrCreateInstance('#modalEditPartList').hide();
+                table.ajax.reload(null, false);
+            })
+            .fail(function (xhr) {
+                $alert.removeClass('d-none')
+                    .text((xhr.responseJSON && xhr.responseJSON.message) || 'Gagal menghubungi server.');
+            })
+            .always(function () {
+                $btn.prop('disabled', false);
+            });
     });
 
     $('#tblPartList').on('click', '.btn-delete-part-list', function () {

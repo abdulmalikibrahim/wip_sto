@@ -136,6 +136,44 @@ class Bom extends MY_Controller
         redirect('bom');
     }
 
+    /** Add one BOM entry by hand (AJAX only — "Tambah Manual" / "Copy"). */
+    public function create()
+    {
+        $this->require_admin();
+
+        $result = $this->Bom_model->create($this->posted_row());
+
+        $this->output->set_content_type('application/json')->set_output(json_encode(array(
+            'status'  => $result['ok'] ? 'success' : 'error',
+            'message' => $result['message'],
+        )));
+    }
+
+    /** The editable BOM fields as posted by the Add / Edit / Copy modal. */
+    protected function posted_row()
+    {
+        $row = array();
+        foreach (array('material', 'katashiki', 'model', 'suffix', 'component', 'part_number',
+                     'material_description', 'qty', 'uom', 'shop_code') as $field) {
+            $row[$field] = (string) $this->input->post($field);
+        }
+
+        return $row;
+    }
+
+    /** Edit one BOM entry (AJAX only — the table's Edit button). */
+    public function update($id)
+    {
+        $this->require_admin();
+
+        $result = $this->Bom_model->update($id, $this->posted_row());
+
+        $this->output->set_content_type('application/json')->set_output(json_encode(array(
+            'status'  => $result['ok'] ? 'success' : 'error',
+            'message' => $result['message'],
+        )));
+    }
+
     public function delete($id)
     {
         $this->require_admin();

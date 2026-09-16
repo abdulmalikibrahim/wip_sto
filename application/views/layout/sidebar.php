@@ -15,6 +15,9 @@ $is_admin = ($auth_user['role'] ?? '') === 'admin';
         <a class="nav-link <?= $active_menu === 'juklak' ? 'active' : '' ?>" href="<?= base_url('juklak') ?>">
             <i class="bi bi-journal-check"></i> Juklak
         </a>
+        <a class="nav-link <?= $active_menu === 'special_part' ? 'active' : '' ?>" href="<?= base_url('special-part') ?>">
+            <i class="bi bi-sliders"></i> Part Special
+        </a>
 
         <div class="nav-section-label">Master WIP</div>
         <?php

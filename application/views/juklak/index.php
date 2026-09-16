@@ -9,6 +9,9 @@
             <i class="bi bi-download me-1"></i> Download Template
         </a>
         <?php if ($is_admin): ?>
+        <button type="button" class="btn btn-success btn-sm" id="btnAddJuklak" <?= $table_ready ? '' : 'disabled' ?>>
+            <i class="bi bi-plus-circle me-1"></i> Tambah Manual
+        </button>
         <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalUploadJuklak" <?= $table_ready ? '' : 'disabled' ?>>
             <i class="bi bi-upload me-1"></i> Upload Juklak
         </button>
@@ -79,6 +82,79 @@
 </div>
 
 <?php if ($is_admin): ?>
+<!-- Edit Modal -->
+<div class="modal fade" id="modalEditJuklak" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="formEditJuklak">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil me-1"></i> <span id="juklakModalTitle">Edit Juklak</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="juklakEditAlert" class="alert alert-danger d-none py-2 small"></div>
+                    <input type="hidden" id="juklakEditId" value="">
+                    <div class="mb-3">
+                        <label class="form-label small">Plant</label>
+                        <select class="form-select form-select-sm" id="juklakEditPlant" required>
+                            <option value="kap1">KAP1</option>
+                            <option value="kap2">KAP2</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small">Part No</label>
+                        <input type="text" class="form-control form-control-sm" id="juklakEditPartNo" required autocomplete="off">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small">Part Name</label>
+                        <input type="text" class="form-control form-control-sm" id="juklakEditPartName" autocomplete="off">
+                    </div>
+                    <div class="mb-1">
+                        <label class="form-label small">Main Part No</label>
+                        <input type="text" class="form-control form-control-sm" id="juklakEditMainPartNo" autocomplete="off">
+                        <div class="form-text">
+                            Kosongkan kalau part ini adalah main part-nya sendiri. Kalau diisi part lain, part ini
+                            <strong>dihitung 0</strong> di WIP Calc &amp; Summary untuk plant tersebut.
+                        </div>
+                    </div>
+
+                    <hr class="my-3">
+
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label small mb-0">Qty per Suffix</label>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddSuffixRow">
+                            <i class="bi bi-plus-lg"></i> Tambah Suffix
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-1">
+                            <thead>
+                                <tr>
+                                    <th style="width:55%">Suffix</th>
+                                    <th>Qty</th>
+                                    <th style="width:1%"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="juklakSuffixRows"></tbody>
+                        </table>
+                    </div>
+                    <datalist id="juklakSuffixList"></datalist>
+                    <div class="form-text">
+                        Qty per Suffix hanya referensi &mdash; tidak dipakai perhitungan WIP. Baris dengan Suffix atau Qty
+                        kosong diabaikan, dan Qty 0 tidak disimpan (sama seperti aturan upload).
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success btn-sm" id="btnSaveEditJuklak">
+                        <i class="bi bi-check-lg me-1"></i> Simpan
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Upload Modal -->
 <div class="modal fade" id="modalUploadJuklak" tabindex="-1">
     <div class="modal-dialog">

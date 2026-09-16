@@ -79,6 +79,90 @@ class Bom_model extends CI_Model
         return $this->db->get_where($this->table, array('id' => $id))->row_array();
     }
 
+    /**
+     * Tambah satu baris BOM dari tombol "Tambah Manual" / "Copy" di tabel.
+     * Aturan isinya sama dengan update(): Part Number kosong diambil dari
+     * Component, Shop Code dinormalkan.
+     *
+     * @return array{ok:bool, message:string, id?:int}
+     */
+    public function create(array $data)
+    {
+        $clean = $this->clean_row($data);
+        if (isset($clean['error'])) {
+            return array('ok' => false, 'message' => $clean['error']);
+        }
+
+        $this->db->insert($this->table, array_merge($clean['row'], array('created_at' => date('Y-m-d H:i:s'))));
+
+        return array('ok' => true, 'message' => 'Baris BOM ditambahkan.', 'id' => (int) $this->db->insert_id());
+    }
+
+    /**
+     * Validasi + normalisasi satu baris BOM dari form (dipakai create() dan
+     * update()): Part Number kosong diambil dari Component (akhiran "-00"
+     * dibuang) dan Shop Code jadi daftar koma tanpa spasi — sama seperti
+     * waktu upload, supaya FIND_IN_SET di WIP Calc tetap cocok.
+     *
+     * @return array{row?:array, error?:string}
+     */
+    protected function clean_row(array $data)
+    {
+        $component = trim((string) ($data['component'] ?? ''));
+        $part_number = trim((string) ($data['part_number'] ?? ''));
+        if ($part_number === '') {
+            $part_number = $component;
+        }
+        if ($part_number === '') {
+            return array('error' => 'Component atau Part Number harus diisi.');
+        }
+
+        $qty = trim((string) ($data['qty'] ?? ''));
+        if ($qty !== '' && !is_numeric($qty)) {
+            return array('error' => 'Qty harus berupa angka.');
+        }
+
+        return array('row' => array(
+            'material'             => trim((string) ($data['material'] ?? '')),
+            'katashiki'            => trim((string) ($data['katashiki'] ?? '')),
+            'model'                => trim((string) ($data['model'] ?? '')),
+            'suffix'               => trim((string) ($data['suffix'] ?? '')),
+            'component'            => $component,
+            'part_number'          => strip_trailing_dash00($part_number),
+            'material_description' => trim((string) ($data['material_description'] ?? '')),
+            'qty'                  => $qty === '' ? 0 : (float) $qty,
+            'uom'                  => trim((string) ($data['uom'] ?? '')),
+            // Huruf besar, sesuai tampilan kolomnya di form dan data hasil upload.
+            'shop_code'            => strtoupper($this->normalize_shop_code($data['shop_code'] ?? '')),
+            'updated_at'           => date('Y-m-d H:i:s'),
+        ));
+    }
+
+    /**
+     * Edit satu baris BOM dari tombol Edit di tabel. Part Number yang
+     * dikosongkan diambil dari Component (akhiran "-00" dibuang) dan Shop Code
+     * dinormalkan jadi daftar koma tanpa spasi — sama persis seperti waktu
+     * upload, supaya pencarian FIND_IN_SET di WIP Calc tetap cocok.
+     *
+     * @return array{ok:bool, message:string}
+     */
+    public function update($id, array $data)
+    {
+        $row = $this->get($id);
+        if (!$row) {
+            return array('ok' => false, 'message' => 'Baris BOM tidak ditemukan.');
+        }
+
+        $clean = $this->clean_row($data);
+        if (isset($clean['error'])) {
+            return array('ok' => false, 'message' => $clean['error']);
+        }
+
+        $this->db->where('id', (int) $id)->update($this->table, $clean['row']);
+
+        return array('ok' => true, 'message' => 'Baris BOM diperbarui.');
+    }
+
     public function delete($id)
     {
         return $this->db->where('id', $id)->delete($this->table);

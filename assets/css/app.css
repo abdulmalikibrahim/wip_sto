@@ -475,11 +475,11 @@ a { color: var(--app-accent); }
 .flow-guide.is-playing .flow-timer-bar.run { animation: flowTimer var(--flow-dur, 5s) linear forwards; }
 .flow-guide:not(.is-playing) .flow-timer { visibility: hidden; }
 
-/* Cutoff VIN demo: a conveyor, units enter on the left (newest) and leave
-   on the right (oldest). Green = counted, flag = cutoff VIN, grey = older. */
+/* Cutoff VIN demo: a conveyor laid out by Sequence — the highest sequence
+   enters at the left, the lowest leaves at the right, like the Master WIP
+   list with the highest Sequence on top. Green = counted (cutoff VIN and
+   every higher sequence), flag = cutoff VIN, grey = below the cutoff. */
 .conveyor { display: flex; align-items: center; gap: 0.5rem; }
-.conveyor-end { flex-shrink: 0; font-size: 0.72rem; color: var(--app-text-muted); text-align: center; line-height: 1.2; }
-.conveyor-end i { display: block; font-size: 1rem; }
 .conveyor-belt {
     flex: 1;
     min-width: 0;
@@ -526,7 +526,6 @@ a { color: var(--app-accent); }
 .conveyor-legend .lg { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 0.3rem; vertical-align: -1px; }
 .lg-new { background: #3fb950; }
 .lg-cut { background: var(--flow-warn); }
-.lg-old { background: #4a515d; }
 
 .formula-box {
     margin-top: 0.9rem;

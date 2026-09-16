@@ -654,9 +654,11 @@ class Wip extends MY_Controller
     public function summary_missing()
     {
         $this->load->model('Wip_calc_model');
+        $this->load->model('Part_decision_model');
         $data['title'] = 'Summary Tanpa Cutoff VIN';
         $data['shops'] = $this->Wip_calc_model->summary_labels();
         $data['stages'] = $this->Wip_calc_model->summary_stages();
+        $data['decision_ready'] = $this->Part_decision_model->table_ready();
         $data['page_js'] = 'assets/js/wip_summary_missing.js';
         $this->render('wip/summary_missing', $data, 'wip_summary_missing');
     }
@@ -695,8 +697,50 @@ class Wip extends MY_Controller
             $this->summary_scope(),
             (string) $this->input->get('card'),
             (string) $this->input->get('status'),
-            $this->calc_basis()
+            $this->calc_basis(),
+            (string) $this->input->get('decision')
         );
+    }
+
+    /**
+     * Keputusan satu part dari menu Summary Tanpa Cutoff: tetap dihitung, atau
+     * tidak dihitung beserta alasannya (lalu dihitung 0 di WIP Calc & Summary
+     * untuk line tersebut). Admin only, AJAX.
+     */
+    public function summary_missing_decide()
+    {
+        $this->require_admin();
+        $this->load->model('Part_decision_model');
+
+        $result = $this->Part_decision_model->save(
+            (string) $this->input->post('plant'),
+            (string) $this->input->post('part_number'),
+            (string) $this->input->post('decision'),
+            (string) $this->input->post('reason'),
+            $this->auth_user['id']
+        );
+
+        $this->output->set_content_type('application/json')->set_output(json_encode(array(
+            'status'  => $result['ok'] ? 'success' : 'error',
+            'message' => $result['message'],
+        )));
+    }
+
+    /** Hapus keputusan sebuah part — kembali dihitung seperti biasa. */
+    public function summary_missing_decide_clear()
+    {
+        $this->require_admin();
+        $this->load->model('Part_decision_model');
+
+        $ok = $this->Part_decision_model->clear(
+            (string) $this->input->post('plant'),
+            (string) $this->input->post('part_number')
+        );
+
+        $this->output->set_content_type('application/json')->set_output(json_encode(array(
+            'status'  => $ok ? 'success' : 'error',
+            'message' => $ok ? 'Keputusan dihapus — part dihitung seperti biasa lagi.' : 'Gagal menghapus keputusan.',
+        )));
     }
 
     protected function handle_calc_cutoff_set($source)

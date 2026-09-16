@@ -45,8 +45,16 @@
             data: null,
             orderable: false,
             searchable: false,
+            className: 'text-nowrap',
             render: function (row) {
-                return '<button class="btn btn-sm btn-danger btn-delete-juklak" data-id="' + row.id + '" title="Delete">' +
+                // Baris ini dibawa lewat data-row supaya form Edit tidak perlu
+                // request lagi ke server (dan aman dari child row responsive).
+                var data = encodeURIComponent(JSON.stringify(row));
+                return '<button class="btn btn-sm btn-outline-primary btn-edit-juklak me-1" title="Edit" data-row="' +
+                    data + '"><i class="bi bi-pencil"></i></button>' +
+                    '<button class="btn btn-sm btn-outline-secondary btn-copy-juklak me-1" title="Copy — isi form baru dengan data baris ini" data-row="' +
+                    data + '"><i class="bi bi-files"></i></button>' +
+                    '<button class="btn btn-sm btn-danger btn-delete-juklak" data-id="' + row.id + '" title="Delete">' +
                     '<i class="bi bi-trash"></i></button>';
             }
         });
@@ -107,6 +115,126 @@
                 }
             }, 'json');
         });
+    });
+
+    // ---- Tambah / Edit / Copy satu baris (admin) ----
+
+    // Saran kode Suffix dari Master BOM / Part List — diambil sekali saat modal
+    // pertama dibuka, supaya halaman tidak menunggu query besar itu saat load.
+    var suffixesLoaded = false;
+
+    function loadSuffixSuggestions() {
+        if (suffixesLoaded) return;
+        suffixesLoaded = true;
+        $.getJSON(BASE_URL + 'juklak/suffixes').done(function (resp) {
+            var $list = $('#juklakSuffixList').empty();
+            (resp.data || []).forEach(function (code) {
+                $list.append($('<option>').attr('value', code));
+            });
+        });
+    }
+
+    function suffixRow(suffix, qty) {
+        return '<tr>' +
+            '<td><input type="text" class="form-control form-control-sm juklak-suffix text-uppercase" ' +
+                'list="juklakSuffixList" value="' + esc(suffix == null ? '' : suffix) + '" placeholder="mis. 7J"></td>' +
+            '<td><input type="number" step="0.001" class="form-control form-control-sm juklak-suffix-qty" ' +
+                'value="' + esc(qty == null ? '' : qty) + '" placeholder="Qty"></td>' +
+            '<td><button type="button" class="btn btn-sm btn-outline-danger btn-remove-suffix" title="Hapus baris">' +
+                '<i class="bi bi-x-lg"></i></button></td>' +
+            '</tr>';
+    }
+
+    function renderSuffixRows(map) {
+        var $rows = $('#juklakSuffixRows').empty();
+        var keys = Object.keys(map || {});
+        keys.forEach(function (suffix) {
+            $rows.append(suffixRow(suffix, map[suffix]));
+        });
+        if (!keys.length) $rows.append(suffixRow('', ''));
+    }
+
+    $('#btnAddSuffixRow').on('click', function () {
+        $('#juklakSuffixRows').append(suffixRow('', ''));
+    });
+
+    $('#juklakSuffixRows').on('click', '.btn-remove-suffix', function () {
+        $(this).closest('tr').remove();
+    });
+
+    // mode 'edit' menyimpan ke baris yang sama; 'add' dan 'copy' menyimpan
+    // sebagai baris baru — bedanya cuma form 'copy' sudah terisi.
+    function openJuklakModal(row, mode) {
+        loadSuffixSuggestions();
+
+        $('#juklakEditAlert').addClass('d-none').text('');
+        $('#juklakEditId').val(mode === 'edit' && row ? row.id : '');
+        $('#juklakEditPlant').val(row ? String(row.plant).toLowerCase() : 'kap1');
+        $('#juklakEditPartNo').val(row ? row.part_no : '');
+        $('#juklakEditPartName').val(row ? row.part_name : '');
+        $('#juklakEditMainPartNo').val(row ? row.main_part_no : '');
+        renderSuffixRows(row ? row.suffix_qty_map : null);
+        $('#juklakModalTitle').text(mode === 'edit' ? 'Edit Juklak'
+            : (mode === 'copy' ? 'Copy Juklak' : 'Tambah Juklak'));
+        bootstrap.Modal.getOrCreateInstance('#modalEditJuklak').show();
+    }
+
+    function juklakRowOf($btn) {
+        return JSON.parse(decodeURIComponent($btn.attr('data-row')));
+    }
+
+    $('#btnAddJuklak').on('click', function () {
+        openJuklakModal(null, 'add');
+    });
+
+    $(document).on('click', '#tblJuklak .btn-edit-juklak', function () {
+        openJuklakModal(juklakRowOf($(this)), 'edit');
+    });
+
+    $(document).on('click', '#tblJuklak .btn-copy-juklak', function () {
+        openJuklakModal(juklakRowOf($(this)), 'copy');
+    });
+
+    $('#formEditJuklak').on('submit', function (e) {
+        e.preventDefault();
+        var $alert = $('#juklakEditAlert').addClass('d-none').text('');
+        var $btn = $('#btnSaveEditJuklak').prop('disabled', true);
+        var id = $('#juklakEditId').val();
+
+        var suffixes = [];
+        var qtys = [];
+        $('#juklakSuffixRows tr').each(function () {
+            suffixes.push($(this).find('.juklak-suffix').val());
+            qtys.push($(this).find('.juklak-suffix-qty').val());
+        });
+
+        $.post(BASE_URL + 'juklak/' + (id ? 'update/' + id : 'create'), {
+            plant: $('#juklakEditPlant').val(),
+            part_no: $('#juklakEditPartNo').val(),
+            part_name: $('#juklakEditPartName').val(),
+            main_part_no: $('#juklakEditMainPartNo').val(),
+            // Penanda bahwa Qty per Suffix ikut dikirim: daftar kosong berarti
+            // benar-benar dikosongkan, bukan "jangan diubah".
+            has_suffix: 1,
+            suffix: suffixes,
+            suffix_qty: qtys
+        }, null, 'json')
+            .done(function (resp) {
+                if (resp.status !== 'success') {
+                    $alert.removeClass('d-none').text(resp.message || 'Gagal menyimpan.');
+                    return;
+                }
+                toast('success', resp.message || 'Tersimpan.');
+                bootstrap.Modal.getOrCreateInstance('#modalEditJuklak').hide();
+                load();
+            })
+            .fail(function (xhr) {
+                $alert.removeClass('d-none')
+                    .text((xhr.responseJSON && xhr.responseJSON.message) || 'Gagal menghubungi server.');
+            })
+            .always(function () {
+                $btn.prop('disabled', false);
+            });
     });
 
     $('.btn-juklak-download').on('click', function (e) {
