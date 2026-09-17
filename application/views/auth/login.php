@@ -4,15 +4,18 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Login - WIP & BOM Monitoring</title>
+    <link rel="icon" type="image/jpeg" href="<?= base_url('assets/img/logo.jpg') ?>">
     <link rel="stylesheet" href="<?= base_url('assets/vendor/css/bootstrap.min.css') ?>">
     <link rel="stylesheet" href="<?= base_url('assets/vendor/css/bootstrap-icons.min.css') ?>">
-    <link rel="stylesheet" href="<?= base_url('assets/css/app.css') ?>">
+    <link rel="stylesheet" href="<?= base_url('assets/css/app.css') ?>?v=<?= @filemtime(FCPATH . 'assets/css/app.css') ?: time() ?>">
 </head>
 <body class="login-page">
     <div class="login-card">
         <div class="text-center mb-4">
-            <i class="bi bi-diagram-3-fill" style="font-size:2.4rem;color:var(--app-accent)"></i>
-            <h5 class="mt-2 mb-0 fw-semibold">WIP &amp; BOM Monitoring</h5>
+            <div class="login-logo">
+                <img src="<?= base_url('assets/img/logo.png') ?>" alt="Daihatsu Sahabatku">
+            </div>
+            <h5 class="mt-3 mb-0 fw-semibold">WIP &amp; BOM Monitoring</h5>
             <div class="text-secondary small">Sign in to continue</div>
         </div>
 

@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= isset($title) ? $title . ' - WIP & BOM Monitoring' : 'WIP & BOM Monitoring' ?></title>
+    <link rel="icon" type="image/jpeg" href="<?= base_url('assets/img/logo.jpg') ?>">
     <link rel="stylesheet" href="<?= base_url('assets/vendor/css/bootstrap.min.css') ?>">
     <link rel="stylesheet" href="<?= base_url('assets/vendor/css/bootstrap-icons.min.css') ?>">
     <link rel="stylesheet" href="<?= base_url('assets/vendor/css/dataTables.bootstrap5.min.css') ?>">

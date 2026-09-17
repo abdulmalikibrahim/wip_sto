@@ -711,12 +711,15 @@ class Part_list_model extends CI_Model
      * skipped, not guessed at — counted in $skipped_non_numeric instead so
      * the upload result tells you to go check those cells by hand.
      *
-     * The same (Part No, Suffix, resolved Model) can legitimately appear
+     * The same (Part No, Suffix, resolved Model, Shop) can legitimately appear
      * more than once — the real master file carries outright duplicate
      * rows for the same part (copy/paste artifacts) that don't always
      * agree with each other. The larger Qty wins ($duplicates_collapsed
      * counts how often this happened), on the assumption that a smaller
      * duplicate is just an incomplete copy, not a genuinely smaller count.
+     * Shop is part of that identity: the same part at the same suffix can
+     * be used in ASSY3 with one Qty and in ASSY4 with another, and those are
+     * two real rows (KAP1 counts one, KAP2 the other) — never a duplicate.
      *
      * @return array{ok:bool, message:string, rows?:array, skipped_non_numeric?:int,
      *     duplicates_collapsed?:int, blank_model_suffixes?:string[], blank_model_cells?:int}
@@ -818,8 +821,10 @@ class Part_list_model extends CI_Model
             return array('ok' => false, 'message' => 'No Suffix columns found in row 2 after Part No/Part Name/Shop/Model.');
         }
 
-        // Keyed by "COMPONENT|SUFFIX|MODEL" (upper-cased) so a genuine
-        // duplicate collapses onto the same accumulator entry.
+        // Keyed by "PART_NUMBER|SUFFIX|MODEL|SHOP" (upper-cased) so a genuine
+        // duplicate collapses onto the same accumulator entry, while the same
+        // part used in two shops (ASSY3 vs ASSY4) stays two rows — matching
+        // the table's (model, suffix, part_number, shop_code) unique key.
         $acc = array();
         $skipped_non_numeric = 0;
         $duplicates_collapsed = 0;
@@ -828,7 +833,7 @@ class Part_list_model extends CI_Model
 
         // Rows 1-2 are the header; data starts at row 3.
         foreach ($sheet->getRowIterator(3, $highestRow) as $row) {
-            $partNo = trim((string) $sheet->getCell('A' . $row->getRowIndex())->getValue());
+            $partNo = $this->normalize_part_no($sheet->getCell('A' . $row->getRowIndex())->getValue());
             if ($partNo === '') {
                 continue; // no Part No -> not a real data row (e.g. leftover formula debris rows)
             }
@@ -861,7 +866,7 @@ class Part_list_model extends CI_Model
                     $unresolved_cells++;
                 }
 
-                $key = strtoupper($partNo) . '|' . strtoupper($suffix) . '|' . strtoupper($model);
+                $key = strtoupper(strip_trailing_dash00($partNo)) . '|' . strtoupper($suffix) . '|' . strtoupper($model) . '|' . strtoupper($shopCode);
                 if (isset($acc[$key])) {
                     $duplicates_collapsed++;
                     if ($qty > $acc[$key]['qty']) {
@@ -1049,6 +1054,22 @@ class Part_list_model extends CI_Model
         $actual = array_map($normalize, array_slice($cells, 0, count($this->required_headers)));
 
         return $expected === $actual;
+    }
+
+    /**
+     * Part No dari file upload: kode warna "-C0" di akhir disamakan dengan
+     * "-00", mis. "12345-BZ123-C0" -> "12345-BZ123-00". Dilakukan sebelum
+     * kunci duplikat dibentuk, jadi baris -C0 dan -00 untuk Suffix + Model +
+     * Shop yang sama dianggap satu baris (Qty terbesar yang dipakai).
+     */
+    protected function normalize_part_no($raw)
+    {
+        $part_no = trim((string) $raw);
+        if (strtoupper(substr($part_no, -3)) === '-C0') {
+            return substr($part_no, 0, -3) . '-00';
+        }
+
+        return $part_no;
     }
 
     protected function normalize_shop_code($raw)
@@ -1303,17 +1324,18 @@ class Part_list_model extends CI_Model
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('1F6FEB');
 
-        foreach (array('D', 'E') as $col) {
+        foreach (array('D', 'E', 'F') as $col) {
             $sheet->getStyle("{$col}1:{$col}1048576")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
         }
 
         $r = 2;
         foreach ($diffs as $i => $d) {
             $sheet->setCellValueExplicit("A{$r}", $i + 1, DataType::TYPE_NUMERIC);
-            $sheet->fromArray(array($status_labels[$d['status']] ?? $d['status'], $d['model'], $d['suffix']), null, "B{$r}");
-            $sheet->setCellValueExplicit("D{$r}", $d['component'], DataType::TYPE_STRING);
-            $sheet->setCellValueExplicit("E{$r}", $d['part_number'], DataType::TYPE_STRING);
-            $sheet->fromArray(array($d['field'], $d['bom_value'], $d['part_list_value']), null, "F{$r}");
+            $sheet->fromArray(array($status_labels[$d['status']] ?? $d['status'], $d['model']), null, "B{$r}");
+            $sheet->setCellValueExplicit("D{$r}", $d['suffix'], DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit("E{$r}", $d['component'], DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit("F{$r}", $d['part_number'], DataType::TYPE_STRING);
+            $sheet->fromArray(array($d['field'], $d['bom_value'], $d['part_list_value']), null, "G{$r}");
             $r++;
         }
 

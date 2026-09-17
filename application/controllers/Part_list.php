@@ -198,7 +198,7 @@ class Part_list extends MY_Controller
             $notes[] = "{$parsed['skipped_non_numeric']} cell(s) had a non-numeric value (e.g. \"X\") and were skipped — please check those by hand.";
         }
         if (!empty($parsed['duplicates_collapsed'])) {
-            $notes[] = "{$parsed['duplicates_collapsed']} duplicate row(s) for the same Part No + Suffix were collapsed, keeping the larger Qty.";
+            $notes[] = "{$parsed['duplicates_collapsed']} duplicate row(s) for the same Part No + Suffix + Shop were collapsed, keeping the larger Qty.";
         }
         if (!empty($parsed['blank_model_suffixes'])) {
             $count = count($parsed['blank_model_suffixes']);
