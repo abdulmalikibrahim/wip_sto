@@ -33,11 +33,14 @@ class Auth extends CI_Controller
                     }
 
                     $this->session->set_userdata(array(
-                        'logged_in' => TRUE,
-                        'user_id'   => $user['id'],
-                        'username'  => $user['username'],
-                        'full_name' => $user['full_name'],
-                        'role'      => $user['role'],
+                        'logged_in'  => TRUE,
+                        'user_id'    => $user['id'],
+                        'username'   => $user['username'],
+                        'full_name'  => $user['full_name'],
+                        'role'       => $user['role'],
+                        // Scope for role 'user'; empty/NULL for admin and viewer.
+                        'plant'      => $user['plant'] ?? null,
+                        'shop_codes' => $user['shop_codes'] ?? '',
                     ));
                     $this->User_model->update_last_login($user['id']);
 

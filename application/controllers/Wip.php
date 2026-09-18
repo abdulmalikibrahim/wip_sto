@@ -376,6 +376,7 @@ class Wip extends MY_Controller
         $data['source'] = 'wip/kap1';
         $data['shops'] = $this->config->item('wip_shop_labels');
         $data['shop_codes'] = $this->config->item('wip_calc_shop_codes')['kap1'] ?? array();
+        $data['writable_shops'] = $this->writable_shops('kap1');
         $data['page_js'] = 'assets/js/wip_calc.js';
         $this->render('wip/calc', $data, 'wip_calc_kap1');
     }
@@ -509,6 +510,7 @@ class Wip extends MY_Controller
         $data['source'] = 'wip/kap2';
         $data['shops'] = $this->config->item('wip_shop_labels');
         $data['shop_codes'] = $this->config->item('wip_calc_shop_codes')['kap2'] ?? array();
+        $data['writable_shops'] = $this->writable_shops('kap2');
         $data['page_js'] = 'assets/js/wip_calc.js';
         $this->render('wip/calc', $data, 'wip_calc_kap2');
     }
@@ -743,9 +745,25 @@ class Wip extends MY_Controller
         )));
     }
 
+    /**
+     * Guard for the per-shop actions that post a shop *key* (weld|toso|assy|
+     * wos) instead of a shop code. The key is resolved against $source's own
+     * line, so "weld" on kap1 is WELD3 and can never be read as WELD4.
+     * An unknown key resolves to '' and is refused like any other shop the
+     * account is not assigned to.
+     */
+    protected function require_shop_key($source, $shop)
+    {
+        $this->require_operator();
+        $this->require_plant($source);
+        $this->require_shop_code($this->shop_code_map()[$source][$shop] ?? '');
+    }
+
     protected function handle_calc_cutoff_set($source)
     {
-        $this->require_admin();
+        $this->require_operator();
+        $this->require_plant($source);
+        $this->require_shop_code((string) $this->input->post('shop_code'));
 
         $this->load->model('Wip_calc_model');
         $result = $this->Wip_calc_model->set_cutoff(
@@ -783,10 +801,10 @@ class Wip extends MY_Controller
      */
     protected function handle_calc_cutoff_clear($source)
     {
-        $this->require_admin();
+        $shop = (string) $this->input->post('shop');
+        $this->require_shop_key($source, $shop);
 
         $this->load->model('Wip_calc_model');
-        $shop = (string) $this->input->post('shop');
         $result = $this->Wip_calc_model->clear_shop_cutoffs($source, $shop);
 
         if ($result['ok'] && $result['cleared'] > 0) {
@@ -817,10 +835,10 @@ class Wip extends MY_Controller
      */
     protected function handle_calc_cutoff_set_shop($source)
     {
-        $this->require_admin();
+        $shop = (string) $this->input->post('shop');
+        $this->require_shop_key($source, $shop);
 
         $this->load->model('Wip_calc_model');
-        $shop = (string) $this->input->post('shop');
         $vin = (string) $this->input->post('vin');
         $result = $this->Wip_calc_model->set_shop_cutoff($source, $shop, $vin, $this->auth_user['id'], $this->calc_basis());
 
@@ -847,7 +865,8 @@ class Wip extends MY_Controller
 
     protected function handle_calc_upload($source)
     {
-        $this->require_admin();
+        $this->require_operator();
+        $this->require_plant($source);
 
         if (empty($_FILES['cutoff_file']['name'])) {
             set_flash('error', 'Please choose an Excel file to upload.');
@@ -884,11 +903,18 @@ class Wip extends MY_Controller
             redirect('wip/' . $source . '/calc');
         }
 
-        $result = $this->Wip_calc_model->upsert_cutoffs($source, $parsed['rows'], $this->auth_user['id']);
+        // Admin: no shop filter (null). Operator: only its own shop codes —
+        // a row for any other shop is counted and skipped, never applied.
+        $result = $this->Wip_calc_model->upsert_cutoffs(
+            $source,
+            $parsed['rows'],
+            $this->auth_user['id'],
+            $this->is_admin() ? null : $this->allowed_shop_codes()
+        );
         @unlink($uploaded['full_path']);
 
         $formula_cells = $parsed['formula_cells'] ?? 0;
-        $skipped_total = $parsed['skipped'] + $result['not_found'] + $result['wrong_source'] + $formula_cells;
+        $skipped_total = $parsed['skipped'] + $result['not_found'] + $result['wrong_source'] + $result['not_allowed'] + $formula_cells;
 
         $message = "Applied cutoff VIN for {$result['applied']} part(s)";
         if ($skipped_total > 0) {
@@ -902,6 +928,9 @@ class Wip extends MY_Controller
             }
             if ($result['wrong_source'] > 0) {
                 $reasons[] = "{$result['wrong_source']} Shop not part of this KAP line";
+            }
+            if ($result['not_allowed'] > 0) {
+                $reasons[] = "{$result['not_allowed']} Shop not assigned to your account";
             }
             if ($reasons) {
                 $message .= ' (' . implode(', ', $reasons) . ')';

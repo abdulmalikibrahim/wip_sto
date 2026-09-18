@@ -38,29 +38,84 @@ class Part_list_model extends CI_Model
 
     /**
      * Fields compared row-for-row once two sides share the same
-     * Model+Suffix+Part Number key. Material/Katashiki/Uom are left out —
-     * the pivot upload format never carries them, so comparing them would
-     * just flag every single row as "Different" for no useful reason.
+     * Model+Suffix+Part Number key. Only Qty: a part is "Different" when
+     * its Qty disagrees, nothing else. Part name (Material Description),
+     * Shop Code, Material/Katashiki/Uom are deliberately ignored — they
+     * are allowed to differ between Master BOM and Part List.
      */
     protected $compare_fields = array(
-        'qty'                  => 'Qty',
-        'shop_code'            => 'Shop Code',
-        'material_description' => 'Material Description',
+        'qty' => 'Qty',
     );
+
+    /**
+     * Shop codes every Part List *read* is limited to — set for a scoped
+     * User account (see Part_list::__construct), empty = no limit. A row
+     * matches when any code in its comma-separated shop_code list is one
+     * of these, e.g. scope [WELD3] keeps "WELD3" and "WELD3,ASSY3".
+     *
+     * Applied by every read below (listing, counts, model cards, both
+     * exports). Writes are admin-only and never scoped.
+     *
+     * @var string[]
+     */
+    protected $shop_scope = array();
 
     public function __construct()
     {
         parent::__construct();
     }
 
+    public function set_shop_scope(array $shop_codes)
+    {
+        $this->shop_scope = array_values(array_filter(array_map(function ($c) {
+            return strtoupper(trim((string) $c));
+        }, $shop_codes), 'strlen'));
+    }
+
+    /** Add the shop scope to the query builder chain being built. */
+    protected function apply_shop_scope()
+    {
+        if (empty($this->shop_scope)) {
+            return;
+        }
+        $this->db->where($this->shop_scope_sql(), null, false);
+    }
+
+    /**
+     * The shop scope as a raw SQL condition, for the hand-written queries
+     * that bypass the query builder. Always a complete parenthesized
+     * expression; '1=1' when there is no scope.
+     */
+    protected function shop_scope_sql()
+    {
+        if (empty($this->shop_scope)) {
+            return '1=1';
+        }
+        $parts = array();
+        foreach ($this->shop_scope as $code) {
+            $parts[] = 'FIND_IN_SET(' . $this->db->escape($code) . ', shop_code) > 0';
+        }
+
+        return '(' . implode(' OR ', $parts) . ')';
+    }
+
     /**
      * DataTables server-side listing.
      */
-    public function datatable($request)
-    {
-        $columns = array('id', 'model', 'suffix', 'component', 'part_number', 'material_description', 'qty', 'uom', 'shop_code');
+    /** Columns the Excel-style header filters may act on (see Column_filter). */
+    public $filter_columns = array('model', 'suffix', 'component', 'part_number', 'material_description', 'qty', 'uom', 'shop_code');
 
+    /**
+     * Start a query on part_list with every filter the table view applies:
+     * shop scope, Model card, search box, and the header filters — except
+     * $except_column's own (a column's dropdown list must not filter
+     * itself). Shared by datatable() and distinct_values(), so a scoped
+     * User's dropdown can only ever list values from its own shops.
+     */
+    protected function apply_list_filters($request, $except_column = null)
+    {
         $this->db->from($this->table);
+        $this->apply_shop_scope();
 
         $model_filter = trim((string) ($request['model_filter'] ?? ''));
         if ($model_filter !== '') {
@@ -78,6 +133,35 @@ class Part_list_model extends CI_Model
             $this->db->or_like('shop_code', $search);
             $this->db->group_end();
         }
+
+        $this->load->library('column_filter');
+        $this->column_filter->apply(
+            $this->db,
+            $this->column_filter->parse($request['col_filters'] ?? '', $this->filter_columns),
+            $except_column
+        );
+    }
+
+    /**
+     * Values for one column's header filter dropdown.
+     *
+     * @return array{values:string[], truncated:bool}|null null = column not filterable
+     */
+    public function distinct_values($request, $column, $search = '')
+    {
+        if (!in_array($column, $this->filter_columns, true)) {
+            return null;
+        }
+        $this->apply_list_filters($request, $column);
+
+        return $this->column_filter->distinct($this->db, $column, $search);
+    }
+
+    public function datatable($request)
+    {
+        $columns = array('id', 'model', 'suffix', 'component', 'part_number', 'material_description', 'qty', 'uom', 'shop_code');
+
+        $this->apply_list_filters($request);
         $total_filtered = $this->db->count_all_results('', false);
 
         if (!empty($request['order'])) {
@@ -97,7 +181,7 @@ class Part_list_model extends CI_Model
         return array(
             'data'     => $data,
             'filtered' => $total_filtered,
-            'total'    => $this->db->count_all($this->table),
+            'total'    => $this->count_all(),
         );
     }
 
@@ -241,7 +325,10 @@ class Part_list_model extends CI_Model
 
     public function count_all()
     {
-        return $this->db->count_all($this->table);
+        $this->db->from($this->table);
+        $this->apply_shop_scope();
+
+        return $this->db->count_all_results();
     }
 
     /**
@@ -250,11 +337,13 @@ class Part_list_model extends CI_Model
      */
     public function model_summary()
     {
-        return $this->db->select('model, COUNT(*) AS total')
+        $this->db->select('model, COUNT(*) AS total')
             ->from($this->table)
             ->where('model !=', null)
-            ->where('model !=', '')
-            ->group_by('model')
+            ->where('model !=', '');
+        $this->apply_shop_scope();
+
+        return $this->db->group_by('model')
             ->order_by('model', 'asc')
             ->get()->result_array();
     }
@@ -433,6 +522,7 @@ class Part_list_model extends CI_Model
         if ($model_filter !== '') {
             $this->db->where('model', $model_filter);
         }
+        $this->apply_shop_scope();
 
         $by_model = array();
         foreach ($this->db->get()->result_array() as $row) {
@@ -480,9 +570,10 @@ class Part_list_model extends CI_Model
         $sql = 'SELECT component, part_number, material_description, shop_code, model, suffix, qty FROM '
             . $this->db->protect_identifiers($this->table);
 
+        $sql .= ' WHERE ' . $this->shop_scope_sql();
         $model_filter = trim((string) $model_filter);
         if ($model_filter !== '') {
-            $sql .= ' WHERE model = ' . $this->db->escape($model_filter);
+            $sql .= ' AND model = ' . $this->db->escape($model_filter);
         }
         // Urutan inilah yang bikin baris pivot bisa disusun sambil jalan:
         // semua baris untuk satu Part No + Shop pasti berurutan.
@@ -1172,27 +1263,21 @@ class Part_list_model extends CI_Model
             );
         }
 
-        // Present on both sides, but Qty/Shop Code/Material Description
-        // disagree — the WHERE clause is a cheap pre-filter to shrink what
-        // MySQL sends back; diff_field_value() (trim()-based, case
-        // sensitive) still makes the final per-field call in PHP below,
-        // so a WHERE clause false-positive (e.g. whitespace-only) just
-        // means a candidate row that turns out to have no real diff.
+        // Present on both sides (same Model + Suffix + Part Number), but
+        // Qty disagrees. Name / Shop Code differences are ignored on
+        // purpose (see $compare_fields). The WHERE clause is a cheap
+        // pre-filter; diff_field_value() still makes the final call in PHP,
+        // so e.g. 1 vs 1.000 is never reported.
         $mismatch_candidates = $this->db->query("
             SELECT b.model, b.suffix, b.component, b.part_number,
-                   b.material_description AS b_desc, b.qty AS b_qty, b.shop_code AS b_shop,
-                   p.material_description AS p_desc, p.qty AS p_qty, p.shop_code AS p_shop
+                   b.qty AS b_qty, p.qty AS p_qty
             FROM tmp_bom_agg b
             INNER JOIN part_list p ON b.model = p.model AND b.suffix = p.suffix AND b.part_number = p.part_number
             WHERE b.qty <> p.qty
-               OR COALESCE(b.shop_code,'') COLLATE utf8mb4_bin <> COALESCE(p.shop_code,'') COLLATE utf8mb4_bin
-               OR COALESCE(b.material_description,'') COLLATE utf8mb4_bin <> COALESCE(p.material_description,'') COLLATE utf8mb4_bin
         ")->result_array();
 
         $field_cols = array(
-            'qty'                  => array('b_qty', 'p_qty'),
-            'shop_code'            => array('b_shop', 'p_shop'),
-            'material_description' => array('b_desc', 'p_desc'),
+            'qty' => array('b_qty', 'p_qty'),
         );
         foreach ($mismatch_candidates as $row) {
             foreach ($this->compare_fields as $field => $label) {

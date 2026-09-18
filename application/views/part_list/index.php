@@ -93,6 +93,8 @@
     </div>
 </div>
 
+<?php /* Hidden for a shop-scoped User — see Part_list::require_unscoped(). */ ?>
+<?php if ($show_compare): ?>
 <hr class="my-4">
 
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
@@ -160,7 +162,8 @@
     <div class="card-body">
         <p class="small text-secondary mb-2">
             Parts are matched between Master BOM and Part List by <strong>Model + Suffix + Part Number</strong>.
-            Each row below is one concrete difference — a part missing on one side, or one field whose value disagrees between the two sides.
+            Each row below is one concrete difference — a part missing on one side, or a <strong>Qty</strong> that disagrees between the two sides.
+            Differences in part name or Shop Code are ignored.
         </p>
         <div class="table-responsive">
             <table id="tblCompare" class="table table-hover align-middle w-100">
@@ -182,6 +185,7 @@
         </div>
     </div>
 </div>
+<?php endif; ?>
 
 <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
 <!-- Edit Modal -->

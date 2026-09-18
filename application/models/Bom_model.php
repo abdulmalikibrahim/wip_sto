@@ -25,10 +25,18 @@ class Bom_model extends CI_Model
     /**
      * DataTables server-side listing.
      */
-    public function datatable($request)
-    {
-        $columns = array('id', 'material', 'katashiki', 'model', 'suffix', 'component', 'part_number', 'material_description', 'qty', 'uom', 'shop_code');
+    /** Columns the Excel-style header filters may act on (see Column_filter). */
+    public $filter_columns = array('material', 'katashiki', 'model', 'suffix', 'component', 'part_number', 'material_description', 'qty', 'uom', 'shop_code');
 
+    /**
+     * Start a query on bom with every filter the table view applies: Model
+     * card, search box, and the header filters — except $except_column's
+     * own, which the dropdown list of that column must not apply to itself.
+     * Shared by datatable() and distinct_values() so the list always
+     * matches what the table would show.
+     */
+    protected function apply_list_filters($request, $except_column = null)
+    {
         $this->db->from($this->table);
 
         // Hard filter from the clickable Model cards on the BOM page (not the
@@ -51,6 +59,35 @@ class Bom_model extends CI_Model
             $this->db->or_like('shop_code', $search);
             $this->db->group_end();
         }
+
+        $this->load->library('column_filter');
+        $this->column_filter->apply(
+            $this->db,
+            $this->column_filter->parse($request['col_filters'] ?? '', $this->filter_columns),
+            $except_column
+        );
+    }
+
+    /**
+     * Values for one column's header filter dropdown.
+     *
+     * @return array{values:string[], truncated:bool}|null null = column not filterable
+     */
+    public function distinct_values($request, $column, $search = '')
+    {
+        if (!in_array($column, $this->filter_columns, true)) {
+            return null;
+        }
+        $this->apply_list_filters($request, $column);
+
+        return $this->column_filter->distinct($this->db, $column, $search);
+    }
+
+    public function datatable($request)
+    {
+        $columns = array('id', 'material', 'katashiki', 'model', 'suffix', 'component', 'part_number', 'material_description', 'qty', 'uom', 'shop_code');
+
+        $this->apply_list_filters($request);
         $total_filtered = $this->db->count_all_results('', false);
 
         if (!empty($request['order'])) {

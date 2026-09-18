@@ -7,6 +7,26 @@ class Part_list extends MY_Controller
     {
         parent::__construct();
         $this->load->model('Part_list_model');
+
+        // A scoped User sees only its own shops' parts. Set here, once, so
+        // every read action below (listing, counts, exports) is limited
+        // without each one having to remember to ask.
+        if ($this->is_operator()) {
+            $this->Part_list_model->set_shop_scope($this->auth_user['shop_codes']);
+        }
+    }
+
+    /**
+     * Compare (Master BOM vs Part List) is not offered to a scoped User.
+     * Filtering its two sides by shop would misreport a part whose Shop
+     * Code changed between them — e.g. BOM WELD3 vs Part List ASSY3 would
+     * show as "Only in BOM" instead of "Different".
+     */
+    protected function require_unscoped()
+    {
+        if ($this->is_operator()) {
+            $this->deny('Compare is not available for shop-scoped accounts.');
+        }
     }
 
     public function index()
@@ -14,7 +34,10 @@ class Part_list extends MY_Controller
         $data['title'] = 'Part List';
         $data['total_part_list'] = $this->Part_list_model->count_all();
         $data['model_summary'] = $this->Part_list_model->model_summary();
-        $data['compare_summary'] = $this->Part_list_model->compare_summary();
+        // Skipped for a scoped User: it is hidden for them, and build_diff()
+        // is the heaviest query on this page.
+        $data['show_compare'] = !$this->is_operator();
+        $data['compare_summary'] = $data['show_compare'] ? $this->Part_list_model->compare_summary() : null;
         $data['page_js'] = 'assets/js/part_list.js';
         $this->render('part_list/index', $data, 'part_list');
     }
@@ -55,10 +78,34 @@ class Part_list extends MY_Controller
     }
 
     /**
+     * Values for one column's Excel-style header filter dropdown (AJAX).
+     * Takes the same params the table sends (Model card, search box,
+     * col_filters) plus `column` and the dropdown's own search `q`. A
+     * scoped User's shop scope applies here too (set in __construct).
+     */
+    public function distinct()
+    {
+        $request = $this->input->post() ?: $this->input->get();
+        $result = $this->Part_list_model->distinct_values(
+            $request,
+            (string) ($request['column'] ?? ''),
+            (string) ($request['q'] ?? '')
+        );
+
+        $this->output->set_content_type('application/json')->set_output(json_encode(
+            $result === null
+                ? array('status' => 'error', 'message' => 'This column cannot be filtered.')
+                : array_merge(array('status' => 'success'), $result)
+        ));
+    }
+
+    /**
      * DataTables server-side source for the Master BOM vs Part List diff table.
      */
     public function compare_data()
     {
+        $this->require_unscoped();
+
         $request = $this->input->post() ?: $this->input->get();
         $result = $this->Part_list_model->compare_datatable($request);
 
@@ -127,6 +174,8 @@ class Part_list extends MY_Controller
      */
     public function compare_export()
     {
+        $this->require_unscoped();
+
         $this->Part_list_model->export_compare(
             (string) $this->input->get('status_filter'),
             (string) $this->input->get('model_filter'),

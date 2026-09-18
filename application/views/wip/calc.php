@@ -1,3 +1,11 @@
+<?php
+// Shop keys this account may write to on this line (see
+// MY_Controller::writable_shops). Admin: every shop; scoped User: its own
+// shop codes; View Only: none. The server re-checks every action, so this
+// only decides which buttons are worth showing.
+$writable_shops = $writable_shops ?? array();
+$can_write = !empty($writable_shops);
+?>
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
     <h1 class="page-title mb-0"><?= html_escape($title) ?></h1>
 </div>
@@ -14,7 +22,7 @@
                         <div class="stat-label"><?= html_escape($label) ?> parts with a cutoff VIN</div>
                         <div class="small mt-1">Total Net: <strong class="text-success" data-net-total>&mdash;</strong></div>
                     </div>
-                    <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
+                    <?php if (isset($writable_shops[$key])): ?>
                     <button type="button" class="btn btn-sm btn-outline-danger btn-clear-cutoff" data-shop="<?= $key ?>" data-shop-label="<?= html_escape($label) ?>" title="Clear all <?= html_escape($label) ?> cutoff VINs (back to Gross totals)">
                         <i class="bi bi-x-circle"></i>
                     </button>
@@ -68,7 +76,7 @@
             </li>
         </ul>
     </div>
-    <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
+    <?php if ($can_write): ?>
     <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#modalSetCutoff">
         <i class="bi bi-plus-circle"></i> Add Cutoff VIN
     </button>
@@ -203,6 +211,7 @@
                         <label class="form-label small">Shop</label>
                         <select class="form-select form-select-sm" name="shop_code" id="cutoffShopCode" required>
                             <?php foreach ($shops as $key => $label): ?>
+                            <?php if (!isset($writable_shops[$key])) { continue; } /* only shops this account may write */ ?>
                             <option value="<?= html_escape($shop_codes[$key] ?? '') ?>" data-shop-key="<?= html_escape($key) ?>">
                                 <?= html_escape($label) ?> (<?= html_escape($shop_codes[$key] ?? '') ?>)
                             </option>

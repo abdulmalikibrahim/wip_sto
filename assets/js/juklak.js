@@ -67,6 +67,10 @@
         columns: columns
     }));
 
+    // Excel-style ▼ filter on every data column header. Juklak's rows are
+    // all loaded in the browser, so filtering happens here, not on the server.
+    ExcelFilter.attach(table, { mode: 'client' });
+
     function paintStats(rows) {
         var stats = { total: rows.length, kap1: 0, kap2: 0, replaced: 0 };
         rows.forEach(function (r) {

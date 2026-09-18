@@ -16,6 +16,7 @@
                         <th>Username</th>
                         <th>Full Name</th>
                         <th>Role</th>
+                        <th>Scope</th>
                         <th>Status</th>
                         <th>Last Login</th>
                         <th>Action</th>
@@ -53,6 +54,7 @@
                         <div class="col-6">
                             <label class="form-label small">Role</label>
                             <select name="role" id="akun_role" class="form-select">
+                                <option value="viewer">View Only</option>
                                 <option value="user">User</option>
                                 <option value="admin">Admin</option>
                             </select>
@@ -63,6 +65,40 @@
                                 <input class="form-check-input" type="checkbox" name="is_active" id="akun_is_active" checked>
                                 <label class="form-check-label small" for="akun_is_active">Active</label>
                             </div>
+                        </div>
+                    </div>
+
+                    <div class="form-text mt-2" id="akun_role_hint"></div>
+
+                    <!-- Scope — only meaningful for role "User"; JS shows/hides it. -->
+                    <div id="akun_scope" class="border rounded p-3 mt-3 d-none">
+                        <div class="mb-3">
+                            <label class="form-label small">Plant</label>
+                            <select name="plant" id="akun_plant" class="form-select form-select-sm">
+                                <option value="">— choose —</option>
+                                <?php foreach (array_keys($shop_code_map) as $plant): ?>
+                                <option value="<?= html_escape($plant) ?>"><?= html_escape(strtoupper($plant)) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <label class="form-label small d-block">Shop Codes</label>
+                        <?php foreach ($shop_code_map as $plant => $shops): ?>
+                        <div class="akun-shop-group d-none" data-plant="<?= html_escape($plant) ?>">
+                            <?php foreach ($shops as $key => $shop_code): ?>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input akun-shop-code" type="checkbox"
+                                       value="<?= html_escape($shop_code) ?>"
+                                       id="akun_shop_<?= html_escape($plant . '_' . $key) ?>">
+                                <label class="form-check-label small" for="akun_shop_<?= html_escape($plant . '_' . $key) ?>">
+                                    <?= html_escape($shop_code) ?>
+                                </label>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <?php endforeach; ?>
+                        <div class="form-text mt-2">
+                            This account may set, upload and clear cutoff VINs for the ticked shops only,
+                            and its Part List shows just those shops' parts.
                         </div>
                     </div>
                 </div>

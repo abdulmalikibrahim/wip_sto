@@ -73,6 +73,13 @@
         order: [[isAdmin ? 2 : 1, 'asc']]
     }));
 
+    // Excel-style ▼ filter on every data column header.
+    ExcelFilter.attach(table, {
+        mode: 'server',
+        distinctUrl: BASE_URL + 'part-list/distinct',
+        numeric: ['qty']
+    });
+
     if (isAdmin) {
         function updateSelectionInfo() {
             var has = selectedIds.size > 0;

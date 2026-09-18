@@ -65,8 +65,11 @@ if (!function_exists('badge_role')) {
         if ($role === 'admin') {
             return '<span class="badge text-bg-danger">Admin</span>';
         }
+        if ($role === 'user') {
+            return '<span class="badge text-bg-primary">User</span>';
+        }
 
-        return '<span class="badge text-bg-secondary">User</span>';
+        return '<span class="badge text-bg-secondary">View Only</span>';
     }
 }
 

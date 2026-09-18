@@ -60,6 +60,7 @@ $route['logout'] = 'auth/logout';
 // Master BOM
 $route['bom'] = 'bom/index';
 $route['bom/data'] = 'bom/data';
+$route['bom/distinct'] = 'bom/distinct';
 $route['bom/template'] = 'bom/template';
 $route['bom/export'] = 'bom/export';
 $route['bom/upload'] = 'bom/upload';
@@ -70,6 +71,7 @@ $route['bom/delete/(:num)'] = 'bom/delete/$1';
 // Part List (compared against Master BOM)
 $route['part-list'] = 'part_list/index';
 $route['part-list/data'] = 'part_list/data';
+$route['part-list/distinct'] = 'part_list/distinct';
 $route['part-list/compare/data'] = 'part_list/compare_data';
 $route['part-list/compare/export'] = 'part_list/compare_export';
 $route['part-list/template'] = 'part_list/template';

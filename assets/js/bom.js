@@ -53,6 +53,13 @@
         order: [[1, 'asc']]
     }));
 
+    // Excel-style ▼ filter on every data column header.
+    ExcelFilter.attach(table, {
+        mode: 'server',
+        distinctUrl: BASE_URL + 'bom/distinct',
+        numeric: ['qty']
+    });
+
     // Model cards: click to filter the table down to that model, click again
     // (or click "All") to clear it. Combines with the search box, not replaces it.
     $('#modelCards').on('click', '.model-card', function () {

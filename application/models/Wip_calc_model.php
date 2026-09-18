@@ -2361,17 +2361,28 @@ class Wip_calc_model extends CI_Model
      * part_number) pair keeps at most one cutoff row, replaced on every
      * successful upload.
      *
-     * @return array{applied:int, not_found:int, wrong_source:int}
+     * $allowed_shop_codes limits which shops a row may write to — pass the
+     * uploader's own codes for a scoped operator, or null for no limit
+     * (admin). A row outside it is counted in not_allowed and skipped.
+     *
+     * @return array{applied:int, not_found:int, wrong_source:int, not_allowed:int}
      */
-    public function upsert_cutoffs($source, array $rows, $user_id)
+    public function upsert_cutoffs($source, array $rows, $user_id, $allowed_shop_codes = null)
     {
         $applied = 0;
         $not_found = 0;
         $wrong_source = 0;
+        $not_allowed = 0;
 
         foreach ($rows as $row) {
             if ($row['source'] !== $source) {
                 $wrong_source++;
+                continue;
+            }
+
+            if ($allowed_shop_codes !== null
+                && !in_array(strtoupper($row['shop_code']), $allowed_shop_codes, true)) {
+                $not_allowed++;
                 continue;
             }
 
@@ -2384,7 +2395,7 @@ class Wip_calc_model extends CI_Model
             $applied++;
         }
 
-        return array('applied' => $applied, 'not_found' => $not_found, 'wrong_source' => $wrong_source);
+        return array('applied' => $applied, 'not_found' => $not_found, 'wrong_source' => $wrong_source, 'not_allowed' => $not_allowed);
     }
 
     /**

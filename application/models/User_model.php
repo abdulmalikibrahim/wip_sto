@@ -30,7 +30,7 @@ class User_model extends CI_Model
      */
     public function datatable($request)
     {
-        $columns = array('id', 'username', 'full_name', 'role', 'is_active', 'last_login');
+        $columns = array('id', 'username', 'full_name', 'role', 'plant', 'is_active', 'last_login');
 
         $this->db->from($this->table);
 
@@ -40,6 +40,9 @@ class User_model extends CI_Model
             $this->db->like('username', $search);
             $this->db->or_like('full_name', $search);
             $this->db->or_like('role', $search);
+            // So an admin can find "who covers WELD3" by typing the shop code.
+            $this->db->or_like('plant', $search);
+            $this->db->or_like('shop_codes', $search);
             $this->db->group_end();
         }
         $total_filtered = $this->db->count_all_results('', false);

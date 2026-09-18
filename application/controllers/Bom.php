@@ -56,6 +56,27 @@ class Bom extends MY_Controller
     }
 
     /**
+     * Values for one column's Excel-style header filter dropdown (AJAX).
+     * Takes the same params the table sends (Model card, search box,
+     * col_filters) plus `column` and the dropdown's own search `q`.
+     */
+    public function distinct()
+    {
+        $request = $this->input->post() ?: $this->input->get();
+        $result = $this->Bom_model->distinct_values(
+            $request,
+            (string) ($request['column'] ?? ''),
+            (string) ($request['q'] ?? '')
+        );
+
+        $this->output->set_content_type('application/json')->set_output(json_encode(
+            $result === null
+                ? array('status' => 'error', 'message' => 'This column cannot be filtered.')
+                : array_merge(array('status' => 'success'), $result)
+        ));
+    }
+
+    /**
      * Download the Excel upload template.
      */
     public function template()

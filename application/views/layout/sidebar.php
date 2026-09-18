@@ -1,5 +1,10 @@
 <?php
 $is_admin = ($auth_user['role'] ?? '') === 'admin';
+// Scoped User: a focused menu — only its own KAP line's WIP group, and no
+// IPI / FTI / Part Special. Menu visibility only; the controllers enforce
+// what each account may actually write.
+$is_operator = ($auth_user['role'] ?? '') === 'user';
+$operator_plant = $auth_user['plant'] ?? '';
 ?>
 <aside class="app-sidebar" id="appSidebar">
     <nav class="nav flex-column py-3">
@@ -15,9 +20,11 @@ $is_admin = ($auth_user['role'] ?? '') === 'admin';
         <a class="nav-link <?= $active_menu === 'juklak' ? 'active' : '' ?>" href="<?= base_url('juklak') ?>">
             <i class="bi bi-journal-check"></i> Juklak
         </a>
+        <?php if (!$is_operator): ?>
         <a class="nav-link <?= $active_menu === 'special_part' ? 'active' : '' ?>" href="<?= base_url('special-part') ?>">
             <i class="bi bi-sliders"></i> Part Special
         </a>
+        <?php endif; ?>
 
         <div class="nav-section-label">Master WIP</div>
         <?php
@@ -41,6 +48,11 @@ $is_admin = ($auth_user['role'] ?? '') === 'admin';
                 array('Calculation', 'calc_fti', 'wip/calc-fti', 'bi-calculator'),
             )),
         );
+        if ($is_operator) {
+            // 'kap1' -> 'Kap1': keep just the account's own line.
+            $own = ucfirst((string) $operator_plant);
+            $wip_groups = isset($wip_groups[$own]) ? array($own => $wip_groups[$own]) : array();
+        }
         ?>
         <?php foreach ($wip_groups as $gid => $group): ?>
         <?php $open = in_array($active_menu, array_column($group['items'], 1), true); // the group holding the current page starts open ?>
