@@ -4,12 +4,14 @@
     var ROLE_LABELS = {
         admin:  '<span class="badge text-bg-danger">Admin</span>',
         user:   '<span class="badge text-bg-primary">User</span>',
+        editor: '<span class="badge text-bg-warning text-dark">Editor</span>',
         viewer: '<span class="badge text-bg-secondary">View Only</span>'
     };
 
     var ROLE_HINTS = {
         admin:  'Full access to every page and action.',
         user:   'Sets, uploads and clears cutoff VINs for its own shops only. Everything else is read-only.',
+        editor: 'Only Master BOM, Part List and Juklak — and can upload, add, edit and delete data there. No other menu.',
         viewer: 'Read-only: can browse and download, but cannot change anything.'
     };
 

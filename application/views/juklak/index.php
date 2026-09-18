@@ -1,4 +1,4 @@
-<?php $is_admin = ($auth_user['role'] ?? '') === 'admin'; ?>
+<?php $is_admin = !empty($can_edit_master); /* admin or Editor: may change Juklak data */ ?>
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
     <h1 class="page-title mb-0">Juklak</h1>
     <div class="d-flex flex-wrap gap-2">

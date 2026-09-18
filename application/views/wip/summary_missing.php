@@ -70,9 +70,13 @@ $units_text = function ($card) use ($stages, $label_of) {
         <div class="d-flex align-items-center gap-2">
             <span class="small text-secondary"><i class="bi bi-diagram-3 me-1"></i>Line:</span>
             <div class="btn-group btn-group-sm" role="group" aria-label="KAP line">
+                <?php if (!empty($locked_scope)): /* scoped User: its own line only */ ?>
+                <button type="button" class="btn btn-outline-primary active" data-scope-option="<?= html_escape($locked_scope) ?>"><?= html_escape(strtoupper(str_replace('kap', 'KAP ', $locked_scope))) ?></button>
+                <?php else: ?>
                 <button type="button" class="btn btn-outline-primary active" data-scope-option="all">KAP 1 &amp; 2</button>
                 <button type="button" class="btn btn-outline-primary" data-scope-option="kap1">KAP 1</button>
                 <button type="button" class="btn btn-outline-primary" data-scope-option="kap2">KAP 2</button>
+                <?php endif; ?>
             </div>
         </div>
         <div class="d-flex align-items-center gap-2">

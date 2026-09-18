@@ -7,6 +7,11 @@ class Dashboard extends MY_Controller
     {
         parent::__construct();
         $this->load->model('Bom_model');
+        // Same scope as the Master BOM page, so the Dashboard's BOM total
+        // matches what a scoped User sees there.
+        if ($this->is_operator()) {
+            $this->Bom_model->set_shop_scope($this->auth_user['shop_codes']);
+        }
     }
 
     public function index()

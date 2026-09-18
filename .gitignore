@@ -11,4 +11,5 @@ Thumbs.db
 /application/config/wip_api_local.php
 /docs/*
 application/config/database.php
+application/config/*/database.php
 /database/*

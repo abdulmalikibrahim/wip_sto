@@ -39,7 +39,24 @@ class MY_Controller extends CI_Controller
         );
 
         $this->data['auth_user'] = $this->auth_user;
+        $this->data['can_edit_master'] = $this->can_edit_master();
+
+        // An Editor may open Master BOM, Part List and Juklak only. Checked
+        // here, before any controller runs, so every other page and AJAX
+        // endpoint is refused — including ones added later.
+        if ($this->is_editor()) {
+            $class = strtolower($this->router->fetch_class());
+            if (!in_array($class, $this->editor_controllers, true)) {
+                if ($class === 'dashboard' && !$this->input->is_ajax_request()) {
+                    redirect('bom'); // the landing page after login
+                }
+                $this->deny('Your account can only open Master BOM, Part List and Juklak.');
+            }
+        }
     }
+
+    /** Controllers (router class, lowercase) an Editor may open. */
+    protected $editor_controllers = array('bom', 'part_list', 'juklak');
 
     // -----------------------------------------------------------------
     // Roles
@@ -48,6 +65,7 @@ class MY_Controller extends CI_Controller
     //   viewer — read-only, every page, no writes at all
     //   user   — scoped operator: cutoff VIN writes, but only inside its
     //            own plant (kap1|kap2) and its own shop codes
+    //   editor — Master BOM, Part List and Juklak only, full edit there
     //
     // Every guard below answers with 403 the same way, so an AJAX caller
     // always gets JSON and a page load always gets the error page.
@@ -62,6 +80,26 @@ class MY_Controller extends CI_Controller
     protected function is_operator()
     {
         return $this->auth_user['role'] === 'user';
+    }
+
+    /** An Editor: Master BOM, Part List and Juklak only, with full edit rights there. */
+    protected function is_editor()
+    {
+        return $this->auth_user['role'] === 'editor';
+    }
+
+    /** May add / edit / delete / upload Master BOM, Part List and Juklak data. */
+    protected function can_edit_master()
+    {
+        return $this->is_admin() || $this->is_editor();
+    }
+
+    /** 403 unless this account may edit Master BOM, Part List and Juklak data. */
+    protected function require_master_editor()
+    {
+        if (!$this->can_edit_master()) {
+            $this->deny('You do not have permission to change this data.');
+        }
     }
 
     /** Split a stored "WELD3,TOSO3" list into an uppercase array. */

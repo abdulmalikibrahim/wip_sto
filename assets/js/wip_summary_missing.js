@@ -4,7 +4,9 @@
     // Card => the unit shops it counts its parts on (Wip_calc_model::summary_stages()).
     var stages = WIP_MISSING_STAGES;
     var currentCard = 'all';
-    var currentScope = 'all';
+    // Starts on whichever line button the page marked active (a scoped User
+    // only gets its own line's button).
+    var currentScope = $('[data-scope-option].active').data('scope-option') || 'all';
     var currentStatus = '';
     var currentDecision = '';
     var allRows = [];

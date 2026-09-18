@@ -5,12 +5,16 @@ $is_admin = ($auth_user['role'] ?? '') === 'admin';
 // what each account may actually write.
 $is_operator = ($auth_user['role'] ?? '') === 'user';
 $operator_plant = $auth_user['plant'] ?? '';
+// Editor: only the three menus it may open (MY_Controller enforces it).
+$is_editor = ($auth_user['role'] ?? '') === 'editor';
 ?>
 <aside class="app-sidebar" id="appSidebar">
     <nav class="nav flex-column py-3">
+        <?php if (!$is_editor): ?>
         <a class="nav-link <?= $active_menu === 'dashboard' ? 'active' : '' ?>" href="<?= base_url('dashboard') ?>">
             <i class="bi bi-speedometer2"></i> Dashboard
         </a>
+        <?php endif; ?>
         <a class="nav-link <?= $active_menu === 'bom' ? 'active' : '' ?>" href="<?= base_url('bom') ?>">
             <i class="bi bi-list-columns-reverse"></i> Master BOM
         </a>
@@ -20,6 +24,7 @@ $operator_plant = $auth_user['plant'] ?? '';
         <a class="nav-link <?= $active_menu === 'juklak' ? 'active' : '' ?>" href="<?= base_url('juklak') ?>">
             <i class="bi bi-journal-check"></i> Juklak
         </a>
+        <?php if (!$is_editor): /* everything below the three master-data menus */ ?>
         <?php if (!$is_operator): ?>
         <a class="nav-link <?= $active_menu === 'special_part' ? 'active' : '' ?>" href="<?= base_url('special-part') ?>">
             <i class="bi bi-sliders"></i> Part Special
@@ -74,6 +79,7 @@ $operator_plant = $auth_user['plant'] ?? '';
         <a class="nav-link <?= $active_menu === 'wip_summary_missing' ? 'active' : '' ?>" href="<?= base_url('wip/summary/missing-cutoff') ?>">
             <i class="bi bi-exclamation-diamond"></i> Summary Tanpa Cutoff
         </a>
+        <?php endif; /* !$is_editor */ ?>
 
         <?php if ($is_admin): ?>
         <div class="nav-section-label">Administration</div>

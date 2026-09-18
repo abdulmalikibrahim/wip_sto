@@ -188,7 +188,7 @@ class Part_list extends MY_Controller
      */
     public function upload()
     {
-        $this->require_admin();
+        $this->require_master_editor();
 
         if (empty($_FILES['part_list_file']['name'])) {
             set_flash('error', 'Please choose an Excel file to upload.');
@@ -285,7 +285,7 @@ class Part_list extends MY_Controller
     /** Add one Part List entry by hand (AJAX only — "Tambah Manual" / "Copy"). */
     public function create()
     {
-        $this->require_admin();
+        $this->require_master_editor();
 
         $result = $this->Part_list_model->create($this->posted_row());
 
@@ -310,7 +310,7 @@ class Part_list extends MY_Controller
     /** Edit one Part List entry (AJAX only — the table's Edit button). */
     public function update($id)
     {
-        $this->require_admin();
+        $this->require_master_editor();
 
         $result = $this->Part_list_model->update($id, $this->posted_row());
 
@@ -322,7 +322,7 @@ class Part_list extends MY_Controller
 
     public function delete($id)
     {
-        $this->require_admin();
+        $this->require_master_editor();
 
         if ($this->input->is_ajax_request()) {
             $ok = $this->Part_list_model->delete($id);
@@ -344,7 +344,7 @@ class Part_list extends MY_Controller
      */
     public function delete_bulk()
     {
-        $this->require_admin();
+        $this->require_master_editor();
 
         $ids = $this->input->post('ids');
         $deleted = is_array($ids) ? $this->Part_list_model->delete_many($ids) : 0;

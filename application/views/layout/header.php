@@ -16,7 +16,7 @@
     <button class="btn btn-sm btn-secondary me-2 d-lg-none" id="btnToggleSidebar" type="button">
         <i class="bi bi-list"></i>
     </button>
-    <a class="navbar-brand fw-semibold" href="<?= base_url('dashboard') ?>">
+    <a class="navbar-brand fw-semibold" href="<?= base_url(($auth_user['role'] ?? '') === 'editor' ? 'bom' : 'dashboard') ?>">
         <i class="bi bi-diagram-3-fill me-1"></i>WIP &amp; BOM Monitoring
     </a>
     <div class="ms-auto d-flex align-items-center gap-3">

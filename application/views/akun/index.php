@@ -56,6 +56,7 @@
                             <select name="role" id="akun_role" class="form-select">
                                 <option value="viewer">View Only</option>
                                 <option value="user">User</option>
+                                <option value="editor">Editor</option>
                                 <option value="admin">Admin</option>
                             </select>
                         </div>

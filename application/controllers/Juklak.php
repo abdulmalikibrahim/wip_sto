@@ -64,7 +64,7 @@ class Juklak extends MY_Controller
 
     public function upload()
     {
-        $this->require_admin();
+        $this->require_master_editor();
 
         if (!$this->Juklak_model->table_ready()) {
             set_flash('error', 'The juklak table does not exist yet — run database/migrations/2026_09_15_create_juklak.sql first.');
@@ -140,7 +140,7 @@ class Juklak extends MY_Controller
     /** Add one Juklak row by hand (AJAX only — "Tambah Manual" / "Copy"). */
     public function create()
     {
-        $this->require_admin();
+        $this->require_master_editor();
 
         $result = $this->Juklak_model->create(
             (string) $this->input->post('plant'),
@@ -161,7 +161,7 @@ class Juklak extends MY_Controller
     /** Edit one Juklak row (AJAX only). */
     public function update($id)
     {
-        $this->require_admin();
+        $this->require_master_editor();
 
         // has_suffix marks a post from the current form: without it the Qty per
         // Suffix rows are left alone; with it, an empty list really means "kosongkan".
@@ -186,7 +186,7 @@ class Juklak extends MY_Controller
     /** Delete one Juklak row (AJAX only). */
     public function delete($id)
     {
-        $this->require_admin();
+        $this->require_master_editor();
 
         $ok = $this->Juklak_model->delete($id);
         $this->output->set_content_type('application/json')->set_output(json_encode(array(

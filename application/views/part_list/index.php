@@ -12,7 +12,7 @@
         <a href="<?= base_url('part-list/template') ?>" class="btn btn-secondary btn-sm">
             <i class="bi bi-download me-1"></i> Download Template
         </a>
-        <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
+        <?php if (!empty($can_edit_master)): ?>
         <button type="button" class="btn btn-success btn-sm" id="btnAddPartList">
             <i class="bi bi-plus-circle me-1"></i> Tambah Manual
         </button>
@@ -58,7 +58,7 @@
 <div class="card mb-3">
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
         <span><i class="bi bi-table me-1"></i> Part List</span>
-        <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
+        <?php if (!empty($can_edit_master)): ?>
         <div class="d-flex align-items-center gap-2">
             <span id="partListSelectionInfo" class="badge bg-primary d-none">0 selected</span>
             <button type="button" class="btn btn-danger btn-sm d-none" id="btnDeleteSelectedPartList">
@@ -72,7 +72,7 @@
             <table id="tblPartList" class="table table-hover align-middle w-100">
                 <thead>
                     <tr>
-                        <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
+                        <?php if (!empty($can_edit_master)): ?>
                         <th><input type="checkbox" id="checkAllPartList" class="form-check-input" title="Select all on this page"></th>
                         <?php endif; ?>
                         <th>No</th>
@@ -84,7 +84,7 @@
                         <th>Qty</th>
                         <th>Uom</th>
                         <th>Shop Code</th>
-                        <?php if (($auth_user['role'] ?? '') === 'admin'): ?><th>Action</th><?php endif; ?>
+                        <?php if (!empty($can_edit_master)): ?><th>Action</th><?php endif; ?>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -187,7 +187,7 @@
 </div>
 <?php endif; ?>
 
-<?php if (($auth_user['role'] ?? '') === 'admin'): ?>
+<?php if (!empty($can_edit_master)): ?>
 <!-- Edit Modal -->
 <div class="modal fade" id="modalEditPartList" tabindex="-1">
     <div class="modal-dialog modal-lg">

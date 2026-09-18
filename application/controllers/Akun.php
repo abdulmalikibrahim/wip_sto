@@ -56,7 +56,7 @@ class Akun extends MY_Controller
         $this->form_validation->set_rules('username', 'Username', 'required|trim|min_length[3]|max_length[50]');
         $this->form_validation->set_rules('full_name', 'Full Name', 'required|trim');
         $this->form_validation->set_rules('password', 'Password', 'required|min_length[6]');
-        $this->form_validation->set_rules('role', 'Role', 'required|in_list[admin,viewer,user]');
+        $this->form_validation->set_rules('role', 'Role', 'required|in_list[admin,viewer,user,editor]');
 
         if ($this->form_validation->run() === FALSE) {
             $this->json_error(strip_tags(validation_errors()));
@@ -92,7 +92,7 @@ class Akun extends MY_Controller
     public function update($id)
     {
         $this->form_validation->set_rules('full_name', 'Full Name', 'required|trim');
-        $this->form_validation->set_rules('role', 'Role', 'required|in_list[admin,viewer,user]');
+        $this->form_validation->set_rules('role', 'Role', 'required|in_list[admin,viewer,user,editor]');
 
         if ($this->form_validation->run() === FALSE) {
             $this->json_error(strip_tags(validation_errors()));
@@ -156,8 +156,8 @@ class Akun extends MY_Controller
     /**
      * Build the plant/shop_codes pair to store for the submitted role.
      *
-     * Only role 'user' (the scoped operator) carries a scope; admin and
-     * viewer are always stored with it cleared, so a demoted account can
+     * Only role 'user' (the scoped operator) carries a scope; every other
+     * role (admin, viewer, editor) is stored with it cleared, so a demoted account can
      * never keep stale shop access. Every submitted shop code is checked
      * against the chosen plant, so the form cannot grant e.g. WELD4 to a
      * KAP 1 account even if the POST is hand-crafted.

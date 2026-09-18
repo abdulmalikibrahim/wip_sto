@@ -11,9 +11,9 @@ class Auth extends CI_Controller
 
     public function login()
     {
-        // Already logged in? go straight to dashboard.
+        // Already logged in? go straight to the landing page.
         if ($this->session->userdata('logged_in')) {
-            redirect('dashboard');
+            redirect($this->session->userdata('role') === 'editor' ? 'bom' : 'dashboard');
         }
 
         if ($this->input->method() === 'post') {
@@ -38,13 +38,14 @@ class Auth extends CI_Controller
                         'username'   => $user['username'],
                         'full_name'  => $user['full_name'],
                         'role'       => $user['role'],
-                        // Scope for role 'user'; empty/NULL for admin and viewer.
+                        // Scope for role 'user'; empty/NULL for every other role.
                         'plant'      => $user['plant'] ?? null,
                         'shop_codes' => $user['shop_codes'] ?? '',
                     ));
                     $this->User_model->update_last_login($user['id']);
 
-                    redirect('dashboard');
+                    // An Editor has no Dashboard — it lands on Master BOM.
+                    redirect($user['role'] === 'editor' ? 'bom' : 'dashboard');
                 }
 
                 set_flash('error', 'Invalid username or password.');

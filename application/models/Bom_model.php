@@ -29,6 +29,37 @@ class Bom_model extends CI_Model
     public $filter_columns = array('material', 'katashiki', 'model', 'suffix', 'component', 'part_number', 'material_description', 'qty', 'uom', 'shop_code');
 
     /**
+     * Shop codes every Master BOM *read* is limited to — set for a scoped
+     * User account (see Bom::__construct), empty = no limit. A row matches
+     * when any code in its comma-separated shop_code is one of these, e.g.
+     * scope [TOSO3] keeps "TOSO3" and "WELD3,TOSO3". Same rule as
+     * Part_list_model's scope. Writes are admin-only and never scoped.
+     *
+     * @var string[]
+     */
+    protected $shop_scope = array();
+
+    public function set_shop_scope(array $shop_codes)
+    {
+        $this->shop_scope = array_values(array_filter(array_map(function ($c) {
+            return strtoupper(trim((string) $c));
+        }, $shop_codes), 'strlen'));
+    }
+
+    /** Add the shop scope to the query builder chain being built. */
+    protected function apply_shop_scope()
+    {
+        if (empty($this->shop_scope)) {
+            return;
+        }
+        $parts = array();
+        foreach ($this->shop_scope as $code) {
+            $parts[] = 'FIND_IN_SET(' . $this->db->escape($code) . ', shop_code) > 0';
+        }
+        $this->db->where('(' . implode(' OR ', $parts) . ')', null, false);
+    }
+
+    /**
      * Start a query on bom with every filter the table view applies: Model
      * card, search box, and the header filters — except $except_column's
      * own, which the dropdown list of that column must not apply to itself.
@@ -38,6 +69,7 @@ class Bom_model extends CI_Model
     protected function apply_list_filters($request, $except_column = null)
     {
         $this->db->from($this->table);
+        $this->apply_shop_scope();
 
         // Hard filter from the clickable Model cards on the BOM page (not the
         // free-text search box) — combined with it via AND, not replacing it.
@@ -107,7 +139,7 @@ class Bom_model extends CI_Model
         return array(
             'data'     => $data,
             'filtered' => $total_filtered,
-            'total'    => $this->db->count_all($this->table),
+            'total'    => $this->count_all(),
         );
     }
 
@@ -212,7 +244,10 @@ class Bom_model extends CI_Model
 
     public function count_all()
     {
-        return $this->db->count_all($this->table);
+        $this->db->from($this->table);
+        $this->apply_shop_scope();
+
+        return $this->db->count_all_results();
     }
 
     /**
@@ -223,11 +258,13 @@ class Bom_model extends CI_Model
      */
     public function model_summary()
     {
-        return $this->db->select('model, COUNT(*) AS total')
+        $this->db->select('model, COUNT(*) AS total')
             ->from($this->table)
             ->where('model !=', null) // CI3 idiom: value NULL + "!=" operator on the key -> "model IS NOT NULL"
-            ->where('model !=', '')
-            ->group_by('model')
+            ->where('model !=', '');
+        $this->apply_shop_scope();
+
+        return $this->db->group_by('model')
             ->order_by('model', 'asc')
             ->get()->result_array();
     }
@@ -292,6 +329,7 @@ class Bom_model extends CI_Model
             ->order_by('model', 'asc')
             ->order_by('suffix', 'asc')
             ->order_by('component', 'asc');
+        $this->apply_shop_scope();
 
         $model_filter = trim((string) $model_filter);
         if ($model_filter !== '') {

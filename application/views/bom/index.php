@@ -7,7 +7,7 @@
         <a href="<?= base_url('bom/template') ?>" class="btn btn-secondary btn-sm">
             <i class="bi bi-download me-1"></i> Download Template
         </a>
-        <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
+        <?php if (!empty($can_edit_master)): ?>
         <button type="button" class="btn btn-success btn-sm" id="btnAddBom">
             <i class="bi bi-plus-circle me-1"></i> Tambah Manual
         </button>
@@ -70,7 +70,7 @@
                         <th>Qty</th>
                         <th>Uom</th>
                         <th>Shop Code</th>
-                        <?php if (($auth_user['role'] ?? '') === 'admin'): ?><th>Action</th><?php endif; ?>
+                        <?php if (!empty($can_edit_master)): ?><th>Action</th><?php endif; ?>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -79,7 +79,7 @@
     </div>
 </div>
 
-<?php if (($auth_user['role'] ?? '') === 'admin'): ?>
+<?php if (!empty($can_edit_master)): ?>
 <!-- Edit Modal -->
 <div class="modal fade" id="modalEditBom" tabindex="-1">
     <div class="modal-dialog modal-lg">

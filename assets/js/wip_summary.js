@@ -9,7 +9,9 @@
 
     // Welding is what's shown first.
     var currentStage = stageKeys.indexOf('weld') !== -1 ? 'weld' : stageKeys[0];
-    var currentScope = 'all';
+    // Starts on whichever line button the page marked active (a scoped User
+    // only gets its own line's button).
+    var currentScope = $('[data-scope-option].active').data('scope-option') || 'all';
     var hideZeroRows = true; // zero rows are hidden by default; the button shows them again
     var requestSeq = 0;
 

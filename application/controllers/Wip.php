@@ -11,6 +11,46 @@ class Wip extends MY_Controller
     {
         parent::__construct();
         $this->config->load('wip_api');
+
+        // A scoped User's WIP Calc shows only its own shops, and WIP Summary
+        // only its own cards, on its own KAP line. Set on the model once, so
+        // the pages, their data, detail and downloads all follow it.
+        if ($this->is_operator()) {
+            $this->load->model('Wip_calc_model');
+            $this->Wip_calc_model->set_user_scope($this->auth_user['plant'], $this->auth_user['shop_codes']);
+        }
+    }
+
+    /**
+     * Guard for WIP Calc *reads*: a scoped User may only open its own KAP
+     * line, and a per-shop read (Formula Detail) only for its own shop.
+     * Admin and viewer pass through unchanged.
+     */
+    protected function require_calc_read($source, $shop_code = null)
+    {
+        if (!$this->is_operator()) {
+            return;
+        }
+        $this->require_plant($source);
+        if ($shop_code !== null) {
+            $this->require_shop_code($shop_code);
+        }
+    }
+
+    /** The WIP Calc page for one KAP line; shop cards/columns follow the account's scope. */
+    protected function render_calc($source, $title, $active)
+    {
+        $this->require_calc_read($source);
+        $this->load->model('Wip_calc_model');
+
+        $shop_codes = $this->Wip_calc_model->line_shop_codes($source);
+        $data['title'] = $title;
+        $data['source'] = 'wip/' . $source;
+        $data['shops'] = array_intersect_key((array) $this->config->item('wip_shop_labels'), $shop_codes);
+        $data['shop_codes'] = $shop_codes;
+        $data['writable_shops'] = $this->writable_shops($source);
+        $data['page_js'] = 'assets/js/wip_calc.js';
+        $this->render('wip/calc', $data, $active);
     }
 
     public function kap1()
@@ -372,29 +412,26 @@ class Wip extends MY_Controller
      */
     public function kap1_calc()
     {
-        $data['title'] = 'WIP Calc - KAP 1';
-        $data['source'] = 'wip/kap1';
-        $data['shops'] = $this->config->item('wip_shop_labels');
-        $data['shop_codes'] = $this->config->item('wip_calc_shop_codes')['kap1'] ?? array();
-        $data['writable_shops'] = $this->writable_shops('kap1');
-        $data['page_js'] = 'assets/js/wip_calc.js';
-        $this->render('wip/calc', $data, 'wip_calc_kap1');
+        $this->render_calc('kap1', 'WIP Calc - KAP 1', 'wip_calc_kap1');
     }
 
     public function kap1_calc_data()
     {
+        $this->require_calc_read('kap1');
         $this->load->model('Wip_calc_model');
         $this->respond_calc($this->Wip_calc_model->calc('kap1', $this->calc_basis()));
     }
 
     public function kap1_calc_template()
     {
+        $this->require_calc_read('kap1');
         $this->load->model('Wip_calc_model');
         $this->Wip_calc_model->download_template('kap1', (string) $this->input->get('shop'), $this->calc_basis());
     }
 
     public function kap1_calc_export()
     {
+        $this->require_calc_read('kap1');
         $this->load->model('Wip_calc_model');
         $hide_zero = $this->input->get('hide_zero') === '1';
         $shop_filter = (string) $this->input->get('shop_filter');
@@ -418,6 +455,7 @@ class Wip extends MY_Controller
      */
     public function kap1_calc_detail_export()
     {
+        $this->require_calc_read('kap1');
         $this->load->model('Wip_calc_model');
         $this->Wip_calc_model->export_detail('kap1', 'WIP Calc Detail - KAP 1', $this->calc_basis());
     }
@@ -428,6 +466,7 @@ class Wip extends MY_Controller
      */
     public function kap1_calc_detail_breakdown()
     {
+        $this->require_calc_read('kap1', (string) $this->input->get('shop_code'));
         $this->load->model('Wip_calc_model');
         $result = $this->Wip_calc_model->part_breakdown(
             'kap1',
@@ -445,6 +484,7 @@ class Wip extends MY_Controller
      */
     public function kap1_calc_detail_breakdown_vins()
     {
+        $this->require_calc_read('kap1', (string) $this->input->get('shop_code'));
         $this->load->model('Wip_calc_model');
         $result = $this->Wip_calc_model->part_breakdown_vins(
             'kap1',
@@ -506,29 +546,26 @@ class Wip extends MY_Controller
      */
     public function kap2_calc()
     {
-        $data['title'] = 'WIP Calc - KAP 2';
-        $data['source'] = 'wip/kap2';
-        $data['shops'] = $this->config->item('wip_shop_labels');
-        $data['shop_codes'] = $this->config->item('wip_calc_shop_codes')['kap2'] ?? array();
-        $data['writable_shops'] = $this->writable_shops('kap2');
-        $data['page_js'] = 'assets/js/wip_calc.js';
-        $this->render('wip/calc', $data, 'wip_calc_kap2');
+        $this->render_calc('kap2', 'WIP Calc - KAP 2', 'wip_calc_kap2');
     }
 
     public function kap2_calc_data()
     {
+        $this->require_calc_read('kap2');
         $this->load->model('Wip_calc_model');
         $this->respond_calc($this->Wip_calc_model->calc('kap2', $this->calc_basis()));
     }
 
     public function kap2_calc_template()
     {
+        $this->require_calc_read('kap2');
         $this->load->model('Wip_calc_model');
         $this->Wip_calc_model->download_template('kap2', (string) $this->input->get('shop'), $this->calc_basis());
     }
 
     public function kap2_calc_export()
     {
+        $this->require_calc_read('kap2');
         $this->load->model('Wip_calc_model');
         $hide_zero = $this->input->get('hide_zero') === '1';
         $shop_filter = (string) $this->input->get('shop_filter');
@@ -542,12 +579,14 @@ class Wip extends MY_Controller
 
     public function kap2_calc_detail_export()
     {
+        $this->require_calc_read('kap2');
         $this->load->model('Wip_calc_model');
         $this->Wip_calc_model->export_detail('kap2', 'WIP Calc Detail - KAP 2', $this->calc_basis());
     }
 
     public function kap2_calc_detail_breakdown()
     {
+        $this->require_calc_read('kap2', (string) $this->input->get('shop_code'));
         $this->load->model('Wip_calc_model');
         $result = $this->Wip_calc_model->part_breakdown(
             'kap2',
@@ -560,6 +599,7 @@ class Wip extends MY_Controller
 
     public function kap2_calc_detail_breakdown_vins()
     {
+        $this->require_calc_read('kap2', (string) $this->input->get('shop_code'));
         $this->load->model('Wip_calc_model');
         $result = $this->Wip_calc_model->part_breakdown_vins(
             'kap2',
@@ -604,6 +644,7 @@ class Wip extends MY_Controller
         $data['shops'] = $this->Wip_calc_model->summary_labels();
         $data['stages'] = $this->Wip_calc_model->summary_stages();
         $data['page_js'] = 'assets/js/wip_summary.js';
+        $data['locked_scope'] = $this->is_operator() ? $this->auth_user['plant'] : null;
         $this->render('wip/summary', $data, 'wip_summary');
     }
 
@@ -642,6 +683,9 @@ class Wip extends MY_Controller
     /** Which KAP line(s) WIP Summary covers: 'kap1', 'kap2', or 'all' (default). */
     protected function summary_scope()
     {
+        if ($this->is_operator()) {
+            return (string) $this->auth_user['plant']; // a scoped User sees its own line only
+        }
         $scope = $this->input->get('scope');
 
         return in_array($scope, array('kap1', 'kap2'), true) ? $scope : 'all';
@@ -662,6 +706,7 @@ class Wip extends MY_Controller
         $data['stages'] = $this->Wip_calc_model->summary_stages();
         $data['decision_ready'] = $this->Part_decision_model->table_ready();
         $data['page_js'] = 'assets/js/wip_summary_missing.js';
+        $data['locked_scope'] = $this->is_operator() ? $this->auth_user['plant'] : null;
         $this->render('wip/summary_missing', $data, 'wip_summary_missing');
     }
 
@@ -683,8 +728,10 @@ class Wip extends MY_Controller
     public function summary_missing_detail()
     {
         $this->load->model('Wip_calc_model');
+        $source = $this->input->get('source') === 'kap2' ? 'kap2' : 'kap1';
+        $this->require_calc_read($source);
         $result = $this->Wip_calc_model->missing_cutoff_detail(
-            $this->input->get('source') === 'kap2' ? 'kap2' : 'kap1',
+            $source,
             (string) $this->input->get('card'),
             (string) $this->input->get('part_number'),
             $this->calc_basis()

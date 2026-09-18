@@ -41,10 +41,55 @@ class Wip_calc_model extends CI_Model
     /** @var array<string,array> per-(source|unit shop) VIN index, see unit_index() */
     protected $unit_index_cache = array();
 
+    /**
+     * Scope for a shop-scoped User account (see Wip::__construct): its
+     * plant ('kap1'|'kap2') and uppercase shop codes. null = no scope
+     * (admin, viewer) — every method below behaves exactly as before.
+     *
+     * @var array{plant:string, shop_codes:string[]}|null
+     */
+    protected $user_scope = null;
+
     public function __construct()
     {
         parent::__construct();
         $this->config->load('wip_api');
+    }
+
+    public function set_user_scope($plant, array $shop_codes)
+    {
+        $this->user_scope = array(
+            'plant'      => (string) $plant,
+            'shop_codes' => array_values(array_filter(array_map(function ($c) {
+                return strtoupper(trim((string) $c));
+            }, $shop_codes), 'strlen')),
+        );
+    }
+
+    /**
+     * A KAP line's shops (key => shop code, line order) as this account may
+     * see them in WIP Calc: every shop, or for a scoped User only its own
+     * shops — none at all on the other plant. calc(), calc_detail(),
+     * export() and download_template() all read their shop list from here,
+     * so the page, its Formula Detail and both downloads stay in step.
+     *
+     * Only for WIP Calc: summary() counts a card over the shops downstream
+     * of it too, so it keeps the full line and narrows its cards instead
+     * (see summary_stages()).
+     */
+    public function line_shop_codes($source)
+    {
+        $shop_codes = (array) ($this->config->item('wip_calc_shop_codes')[$source] ?? array());
+        if ($this->user_scope === null) {
+            return $shop_codes;
+        }
+        if ($this->user_scope['plant'] !== $source) {
+            return array();
+        }
+
+        return array_filter($shop_codes, function ($code) {
+            return in_array(strtoupper($code), $this->user_scope['shop_codes'], true);
+        });
     }
 
     /**
@@ -227,7 +272,7 @@ class Wip_calc_model extends CI_Model
      */
     public function calc($source, $basis = 'bom')
     {
-        $shop_codes = $this->config->item('wip_calc_shop_codes')[$source] ?? array();
+        $shop_codes = $this->line_shop_codes($source);
         if (empty($shop_codes)) {
             return array('ok' => false, 'message' => 'Unknown WIP Calc source.', 'cutoff_summary' => array(), 'data' => array());
         }
@@ -250,11 +295,19 @@ class Wip_calc_model extends CI_Model
         // string equality — so a part shared across shops is only stored once but
         // counted for each shop it names. Matched case-insensitively, since upload
         // data isn't normalized to upper.
+        //
+        // Always the WHOLE line's rows, even for a scoped User: a part's
+        // Model column is built from all its rows, and a Part Special rule
+        // can count a part in a shop its Shop Code doesn't name. Which parts
+        // a scoped User sees is decided per part below (in_scope), so each
+        // row it gets is exactly the row an admin gets, minus other shops.
+        $line_codes = (array) ($this->config->item('wip_calc_shop_codes')[$source] ?? array());
+        $scope_codes = array_map('strtoupper', array_values($shop_codes));
         $this->db->select($this->basis_select($basis, array(
             'material', 'part_number', 'material_description', 'uom', 'model', 'suffix', 'shop_code', 'qty',
         )), false)->from($this->basis_table($basis));
         $this->db->group_start();
-        foreach ($shop_codes as $shop_code) {
+        foreach ($line_codes as $shop_code) {
             foreach (array_unique(array($shop_code, strtoupper($shop_code), strtolower($shop_code))) as $variant) {
                 $this->db->or_where('FIND_IN_SET(' . $this->db->escape($variant) . ', shop_code) >', 0);
             }
@@ -307,6 +360,19 @@ class Wip_calc_model extends CI_Model
             }
 
             $part_key = strtoupper(trim($part_number));
+
+            // Scoped User: the part is shown if any of its rows names one of
+            // the User's shops — or, for a Part Special part, if the rule
+            // counts it in one of them (the rule replaces the Shop Code).
+            if ($this->user_scope !== null && empty($acc[$part_number]['in_scope'])) {
+                $rule = $this->special_shops($source)[$part_key] ?? null;
+                $acc[$part_number]['in_scope'] = $rule !== null
+                    ? (bool) array_intersect($rule, array_keys($shop_codes))
+                    : (bool) array_intersect(
+                        array_map('strtoupper', array_map('trim', explode(',', (string) $row['shop_code']))),
+                        $scope_codes
+                    );
+            }
 
             // Juklak: represented by its main part on this line — listed, but counted as 0.
             $juklak_main = $this->juklak_replaced($source)[$part_key] ?? null;
@@ -414,8 +480,15 @@ class Wip_calc_model extends CI_Model
             }
         }
 
+        if ($this->user_scope !== null) {
+            $acc = array_filter($acc, function ($row) {
+                return !empty($row['in_scope']);
+            });
+        }
+
         $data = array_values($acc);
         foreach ($data as &$row) {
+            unset($row['in_scope']);
             $row['shop_code'] = implode(', ', array_keys($row['shop_code_set']));
             unset($row['shop_code_set']);
 
@@ -490,7 +563,7 @@ class Wip_calc_model extends CI_Model
      */
     public function calc_detail($source, $basis = 'bom')
     {
-        $shop_codes = $this->config->item('wip_calc_shop_codes')[$source] ?? array();
+        $shop_codes = $this->line_shop_codes($source);
         if (empty($shop_codes)) {
             return array('ok' => false, 'message' => 'Unknown WIP Calc source.', 'data' => array());
         }
@@ -1001,7 +1074,7 @@ class Wip_calc_model extends CI_Model
             }));
         }
 
-        $shop_codes = $this->config->item('wip_calc_shop_codes')[$source] ?? array();
+        $shop_codes = $this->line_shop_codes($source);
         $shop_labels = $this->config->item('wip_shop_labels');
         $shop_keys = array_keys($shop_codes);
 
@@ -1272,7 +1345,45 @@ class Wip_calc_model extends CI_Model
             $stages[$shop] = array_slice($line, $i);
         }
 
+        // Scoped User: only its own cards. A card's units still run down
+        // the whole line (Toso card = Toso + Assy units) — only the list of
+        // cards shrinks, so every figure stays what an admin sees for it.
+        if ($this->user_scope !== null) {
+            $own = $this->scoped_cards();
+            $stages = array_intersect_key($stages, array_flip($own));
+        }
+
         return $stages;
+    }
+
+    /**
+     * The WIP Summary cards a scoped User's shops cover, in card keys.
+     * Each Welding / Toso / Assy shop is its own card. The IPI / FTI cards
+     * hold the Welding parts that are on the WOS IPI / FTI lists (moved
+     * there from the Welding card) and start counting in WOS — so they
+     * belong to a WELD user and a WOS user alike.
+     *
+     * @return string[]
+     */
+    protected function scoped_cards()
+    {
+        $line = (array) ($this->config->item('wip_calc_shop_codes')[$this->user_scope['plant']] ?? array());
+        $wos_cards = array_keys((array) $this->config->item('wos_types'));
+
+        $cards = array();
+        foreach ($line as $shop => $code) {
+            if (!in_array(strtoupper($code), $this->user_scope['shop_codes'], true)) {
+                continue;
+            }
+            if ($shop === 'wos' || $shop === 'weld') {
+                $cards = array_merge($cards, $wos_cards);
+            }
+            if ($shop !== 'wos') {
+                $cards[] = $shop;
+            }
+        }
+
+        return array_values(array_unique($cards));
     }
 
     /** Labels for every summary card and unit shop: the shop labels plus IPI, FTI, WOS IPI, WOS FTI. */
@@ -1410,6 +1521,9 @@ class Wip_calc_model extends CI_Model
     public function summary($scope = 'all', $basis = 'bom', $with_state = false, $ignore_excluded = false)
     {
         $sources = in_array($scope, array('kap1', 'kap2'), true) ? array($scope) : array('kap1', 'kap2');
+        if ($this->user_scope !== null) {
+            $sources = array($this->user_scope['plant']); // a scoped User sees its own line only
+        }
         $stages = $this->summary_stages();
 
         $acc = array();
@@ -1490,7 +1604,8 @@ class Wip_calc_model extends CI_Model
                 // later ones, so every accumulator key below already exists.
                 $special = $this->special_shops($source)[$part_key] ?? null;
                 if ($special !== null) {
-                    $cards = array($special[0]);
+                    // …unless that card is outside a scoped User's cards.
+                    $cards = isset($stages[$special[0]]) ? array($special[0]) : array();
                 }
 
                 if (empty($cards)) {
@@ -2615,7 +2730,7 @@ class Wip_calc_model extends CI_Model
      */
     public function download_template($source, $shop = '', $basis = 'bom')
     {
-        $shop_codes = $this->config->item('wip_calc_shop_codes')[$source] ?? array();
+        $shop_codes = $this->line_shop_codes($source);
         $shop = trim((string) $shop);
         if ($shop !== '' && !isset($shop_codes[$shop])) {
             show_error('Unknown Shop for this KAP line.', 400);

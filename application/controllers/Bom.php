@@ -7,6 +7,13 @@ class Bom extends MY_Controller
     {
         parent::__construct();
         $this->load->model('Bom_model');
+
+        // A scoped User sees only its own shops' BOM rows. Set here, once,
+        // so every read action (listing, filter lists, cards, export) is
+        // limited without each one having to remember to ask.
+        if ($this->is_operator()) {
+            $this->Bom_model->set_shop_scope($this->auth_user['shop_codes']);
+        }
     }
 
     public function index()
@@ -98,7 +105,7 @@ class Bom extends MY_Controller
      */
     public function upload()
     {
-        $this->require_admin();
+        $this->require_master_editor();
 
         if (empty($_FILES['bom_file']['name'])) {
             set_flash('error', 'Please choose an Excel file to upload.');
@@ -160,7 +167,7 @@ class Bom extends MY_Controller
     /** Add one BOM entry by hand (AJAX only — "Tambah Manual" / "Copy"). */
     public function create()
     {
-        $this->require_admin();
+        $this->require_master_editor();
 
         $result = $this->Bom_model->create($this->posted_row());
 
@@ -185,7 +192,7 @@ class Bom extends MY_Controller
     /** Edit one BOM entry (AJAX only — the table's Edit button). */
     public function update($id)
     {
-        $this->require_admin();
+        $this->require_master_editor();
 
         $result = $this->Bom_model->update($id, $this->posted_row());
 
@@ -197,7 +204,7 @@ class Bom extends MY_Controller
 
     public function delete($id)
     {
-        $this->require_admin();
+        $this->require_master_editor();
 
         if ($this->input->is_ajax_request()) {
             $ok = $this->Bom_model->delete($id);
